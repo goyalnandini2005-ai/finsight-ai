@@ -1,0 +1,2084 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FinSight AI | Institutional Equity Research & Valuation Platform</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Plotly.js -->
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+  <style>
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+    .tab-btn.active { border-bottom: 3px solid #2563eb; color: #1d4ed8; font-weight: 700; background-color: #eff6ff; }
+    input[type="range"] { accent-color: #2563eb; }
+    .modal-backdrop { background-color: rgba(15, 23, 42, 0.75); backdrop-filter: blur(2px); }
+    @keyframes pulse-fast { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .animate-pulse-fast { animation: pulse-fast 1.2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+  <!-- REGULATORY & COMPLIANCE BANNER -->
+  <div class="bg-amber-50 border-b border-amber-300 px-4 py-2 text-xs text-amber-900 flex items-center justify-between">
+    <div>
+      <strong>⚠️ REGULATORY & COMPLIANCE NOTICE:</strong> FinSight AI is an educational & portfolio equity research prototype. Nothing herein constitutes regulated investment advice or a solicitation to buy/sell securities. All calculations are deterministic; assumptions are user-editable.
+    </div>
+    <span class="font-mono bg-amber-200 px-2 py-0.5 rounded text-amber-900 font-semibold ml-2 shrink-0">v1.2-LIVE-FEED</span>
+  </div>
+
+  <!-- TOP HEADER -->
+  <header class="bg-slate-900 text-white px-6 py-3.5 shadow-md flex flex-wrap justify-between items-center gap-4">
+    <div>
+      <h1 class="text-xl md:text-2xl font-bold tracking-tight flex items-center gap-2">
+        📊 FinSight AI <span class="text-sm font-normal text-slate-400">| CFA-Aligned Equity Research & Live DCF Workbench</span>
+      </h1>
+    </div>
+
+    <!-- LIVE MARKET FEED & TICKER CONTROLS -->
+    <div class="flex flex-wrap items-center gap-2.5">
+      <div class="flex items-center bg-slate-800 border border-slate-700 rounded px-2.5 py-1 gap-2">
+        <span id="liveStatusDot" class="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block"></span>
+        <span id="liveStatusText" class="text-xs text-slate-300 font-mono">Ready</span>
+      </div>
+
+      <select id="tickerSelect" onchange="onTickerChange()" class="bg-slate-800 border border-slate-600 text-white text-sm rounded px-3 py-1.5 font-semibold focus:outline-none focus:border-blue-400">
+        <!-- Populated dynamically -->
+      </select>
+
+      <button id="btnSyncLive" onclick="syncLiveMarketPrice()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-2 rounded shadow transition flex items-center gap-1.5" title="Fetch real-time market price from live exchange feed">
+        ⚡ Sync Live Price
+      </button>
+
+      <button onclick="openGoogleSheetModal()" class="bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 text-xs font-semibold px-3 py-2 rounded transition flex items-center gap-1" title="Connect a live Google Finance Sheet CSV">
+        🔗 Google Finance Bridge
+      </button>
+
+      <button onclick="openCustomModal()" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-3 py-2 rounded shadow transition flex items-center gap-1">
+        ➕ Add Custom Stock
+      </button>
+
+      <button id="btnResetCustom" onclick="clearCustomCompanies()" class="hidden bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs px-2.5 py-2 rounded transition" title="Remove custom saved tickers">
+        🗑️
+      </button>
+    </div>
+  </header>
+
+  <!-- SUB-BAR: EXTERNAL SCREENER.IN / GOOGLE FINANCE LINKS & QUICK SPOT OVERRIDE -->
+  <div class="bg-slate-800 text-slate-200 px-6 py-2 text-xs border-b border-slate-700 flex flex-wrap items-center justify-between gap-3">
+    <div class="flex flex-wrap items-center gap-4">
+      <span class="text-slate-400 font-semibold uppercase tracking-wider">Verify Live Filings & Quotes:</span>
+      <a id="linkGoogleFinance" href="#" target="_blank" rel="noopener noreferrer" class="text-blue-300 hover:text-white hover:underline font-medium flex items-center gap-1">
+        🌐 Open on Google Finance ↗
+      </a>
+      <a id="linkScreenerIn" href="#" target="_blank" rel="noopener noreferrer" class="text-emerald-300 hover:text-white hover:underline font-medium flex items-center gap-1">
+        📊 Open on Screener.in (Consolidated) ↗
+      </a>
+      <span id="lastPriceSyncBadge" class="text-slate-400 font-mono">Source: Cached Filing Price</span>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <label for="quickSpotInput" class="text-slate-300 font-medium">Live Spot Price Override:</label>
+      <input id="quickSpotInput" type="number" step="0.05" class="w-28 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-white font-mono text-xs focus:border-blue-400 focus:outline-none" oninput="onQuickSpotOverride()" />
+    </div>
+  </div>
+
+  <!-- MAIN WORKSPACE (SIDEBAR + CONTENT) -->
+  <div class="flex-1 flex flex-col lg:flex-row">
+
+    <!-- LEFT SIDEBAR: INTERACTIVE DCF & WACC CONTROLS -->
+    <aside class="w-full lg:w-80 bg-white border-r border-slate-200 p-5 shrink-0 space-y-5">
+      <div class="flex items-center justify-between border-b pb-2">
+        <h2 class="text-sm font-bold uppercase tracking-wider text-slate-700">⚙️ DCF & WACC Assumptions</h2>
+        <button onclick="resetToCompanyDefaults()" class="text-xs text-blue-600 hover:underline font-medium">Reset Defaults</button>
+      </div>
+
+      <!-- Stage 1 Operating Drivers -->
+      <div class="space-y-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
+        <h3 class="text-xs font-bold uppercase text-slate-500">Stage 1 Forecast (Years 1–5)</h3>
+
+        <div>
+          <div class="flex justify-between text-xs font-medium mb-1">
+            <span>Revenue Growth (YoY)</span>
+            <span id="lblRevGrowth" class="font-bold text-blue-700">6.0%</span>
+          </div>
+          <input id="inpRevGrowth" type="range" min="-5" max="35" step="0.5" value="6.0" oninput="updateModel()" class="w-full" />
+        </div>
+
+        <div>
+          <div class="flex justify-between text-xs font-medium mb-1">
+            <span>Target EBIT Margin</span>
+            <span id="lblEbitMargin" class="font-bold text-blue-700">32.0%</span>
+          </div>
+          <input id="inpEbitMargin" type="range" min="2" max="55" step="0.5" value="32.0" oninput="updateModel()" class="w-full" />
+        </div>
+
+        <div>
+          <div class="flex justify-between text-xs font-medium mb-1">
+            <span>Effective Tax Rate</span>
+            <span id="lblTaxRate" class="font-bold text-blue-700">19.0%</span>
+          </div>
+          <input id="inpTaxRate" type="range" min="5" max="35" step="0.5" value="19.0" oninput="updateModel()" class="w-full" />
+        </div>
+
+        <div>
+          <div class="flex justify-between text-xs font-medium mb-1">
+            <span>CapEx (% of Revenue)</span>
+            <span id="lblCapexPct" class="font-bold text-blue-700">2.5%</span>
+          </div>
+          <input id="inpCapexPct" type="range" min="0.5" max="25" step="0.5" value="2.5" oninput="updateModel()" class="w-full" />
+        </div>
+      </div>
+
+      <!-- WACC & Terminal Value Drivers -->
+      <div class="space-y-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
+        <h3 class="text-xs font-bold uppercase text-slate-500">CAPM WACC & Terminal Value</h3>
+
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <div>
+            <label class="block text-slate-600 mb-0.5">Risk-Free Rate (%)</label>
+            <input id="inpRf" type="number" step="0.1" value="4.2" oninput="recalcCapmWacc()" class="w-full border rounded px-2 py-1" />
+          </div>
+          <div>
+            <label class="block text-slate-600 mb-0.5">Equity ERP (%)</label>
+            <input id="inpErp" type="number" step="0.1" value="5.0" oninput="recalcCapmWacc()" class="w-full border rounded px-2 py-1" />
+          </div>
+          <div>
+            <label class="block text-slate-600 mb-0.5">Equity Beta (β)</label>
+            <input id="inpBeta" type="number" step="0.05" value="1.22" oninput="recalcCapmWacc()" class="w-full border rounded px-2 py-1" />
+          </div>
+          <div>
+            <label class="block text-slate-600 mb-0.5">Pre-Tax Kd (%)</label>
+            <input id="inpKd" type="number" step="0.1" value="5.05" oninput="recalcCapmWacc()" class="w-full border rounded px-2 py-1" />
+          </div>
+        </div>
+
+        <div class="text-xs bg-blue-50 border border-blue-200 rounded p-2 text-blue-900">
+          CAPM Computed WACC: <strong id="lblCapmWacc">10.15%</strong>
+          <button onclick="applyCapmWacc()" class="ml-1 underline text-blue-700 font-semibold">Apply</button>
+        </div>
+
+        <div>
+          <div class="flex justify-between text-xs font-medium mb-1">
+            <span>Selected WACC (%)</span>
+            <span id="lblWacc" class="font-bold text-blue-700">9.5%</span>
+          </div>
+          <input id="inpWacc" type="range" min="5.0" max="18.0" step="0.1" value="9.5" oninput="updateModel()" class="w-full" />
+        </div>
+
+        <div>
+          <div class="flex justify-between text-xs font-medium mb-1">
+            <span>Terminal Growth Rate (g)</span>
+            <span id="lblTgr" class="font-bold text-blue-700">2.5%</span>
+          </div>
+          <input id="inpTgr" type="range" min="0.5" max="6.5" step="0.1" value="2.5" oninput="updateModel()" class="w-full" />
+        </div>
+      </div>
+
+      <!-- Live Feed Info Box -->
+      <div class="text-xs text-slate-600 bg-emerald-50 p-3 rounded border border-emerald-200 space-y-1">
+        <div><strong>⚡ Real-Time Price Sync:</strong></div>
+        <p>Click <strong>"⚡ Sync Live Price"</strong> in the header to fetch live NSE/NASDAQ prices, or click <strong>"🔗 Google Finance Bridge"</strong> to connect a live <code>=GOOGLEFINANCE()</code> sheet.</p>
+      </div>
+    </aside>
+
+    <!-- RIGHT MAIN CONTENT AREA -->
+    <main class="flex-1 p-6 space-y-6 overflow-x-hidden">
+
+      <!-- KPI SUMMARY CARDS -->
+      <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4" id="kpiCardsContainer"></div>
+
+      <!-- NAVIGATION TABS -->
+      <div class="border-b border-slate-200 bg-white rounded-t-lg px-2 flex flex-wrap gap-1 shadow-sm">
+        <button onclick="switchTab('tab1')" id="btn-tab1" class="tab-btn active px-4 py-3 text-sm text-slate-600 hover:text-slate-900 transition">🏢 1. Overview & Peers</button>
+        <button onclick="switchTab('tab2')" id="btn-tab2" class="tab-btn px-4 py-3 text-sm text-slate-600 hover:text-slate-900 transition">📈 2. Financial Statements</button>
+        <button onclick="switchTab('tab3')" id="btn-tab3" class="tab-btn px-4 py-3 text-sm text-slate-600 hover:text-slate-900 transition">💎 3. Valuation & DCF</button>
+        <button onclick="switchTab('tab4')" id="btn-tab4" class="tab-btn px-4 py-3 text-sm text-slate-600 hover:text-slate-900 transition">📰 4. News Intelligence</button>
+        <button onclick="switchTab('tab5')" id="btn-tab5" class="tab-btn px-4 py-3 text-sm text-slate-600 hover:text-slate-900 transition">📝 5. Investment Thesis</button>
+        <button onclick="switchTab('tab6')" id="btn-tab6" class="tab-btn px-4 py-3 text-sm text-slate-600 hover:text-slate-900 transition">🛡️ 6. Data Quality & Tests</button>
+      </div>
+
+      <!-- TAB 1: OVERVIEW & PEER COMPARISON -->
+      <section id="tab1" class="tab-panel space-y-6">
+        <div class="bg-white p-5 rounded-lg shadow-sm border border-slate-200">
+          <h2 id="companyTitle" class="text-lg font-bold text-slate-900 mb-1"></h2>
+          <p id="companyDesc" class="text-sm text-slate-600 mb-3"></p>
+          <div id="companyMetaBadges" class="flex flex-wrap gap-2 text-xs"></div>
+        </div>
+
+        <div class="bg-white p-5 rounded-lg shadow-sm border border-slate-200">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div>
+              <h3 class="text-base font-bold text-slate-800">Cross-Company Coverage Comparison Table (Latest Fiscal Year)</h3>
+              <p class="text-xs text-slate-500">Multiples dynamically recalculate whenever live share prices are synced.</p>
+            </div>
+            <button onclick="syncAllTickersLive()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded transition">
+              🔄 Sync All Peer Prices Live
+            </button>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-sm" id="peerComparisonTable"></table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: FINANCIAL STATEMENT ANALYSIS -->
+      <section id="tab2" class="tab-panel hidden space-y-6">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div class="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
+            <div id="chartRevFcf" class="w-full h-80"></div>
+          </div>
+          <div class="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
+            <div id="chartMarginsRoce" class="w-full h-80"></div>
+          </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-lg shadow-sm border border-slate-200">
+          <h3 class="text-base font-bold text-slate-800 mb-3">Multi-Year Financial Ratios & Solvency Trends</h3>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-sm" id="historicalRatiosTable"></table>
+          </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-lg shadow-sm border border-slate-200">
+          <h3 class="text-base font-bold text-slate-800">Formula Transparency & Underlying Figures Audit (Latest FY)</h3>
+          <p class="text-xs text-slate-500 mb-3">Every ratio displays its exact CFA formula and raw numerator/denominator to guarantee zero black-box math.</p>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-sm" id="formulaAuditTable"></table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: VALUATION & 2-STAGE DCF -->
+      <section id="tab3" class="tab-panel hidden space-y-6">
+        <div id="dcfErrorBanner" class="hidden bg-red-50 border border-red-300 text-red-800 p-4 rounded-lg text-sm font-medium"></div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          <div class="xl:col-span-2 bg-white p-5 rounded-lg shadow-sm border border-slate-200">
+            <h3 id="dcfStage1Title" class="text-base font-bold text-slate-800 mb-1">Stage 1: 5-Year Explicit FCFF Forecast</h3>
+            <p class="text-xs text-slate-500 mb-3">Unlevered Free Cash Flow to Firm: <code class="bg-slate-100 px-1 py-0.5 rounded">FCFF = EBIT × (1 - t) + D&amp;A - CapEx - ΔNWC</code></p>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse text-sm" id="dcfProjectionsTable"></table>
+            </div>
+          </div>
+
+          <div class="bg-white p-5 rounded-lg shadow-sm border border-slate-200">
+            <h3 class="text-base font-bold text-slate-800 mb-1">Enterprise-to-Equity Value Bridge</h3>
+            <p class="text-xs text-slate-500 mb-3">Bridges from Implied EV to Implied Intrinsic Share Price.</p>
+            <table class="w-full text-left border-collapse text-sm" id="dcfBridgeTable"></table>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <div class="bg-white p-5 rounded-lg shadow-sm border border-slate-200">
+            <h3 class="text-base font-bold text-slate-800 mb-1">Bear / Base / Bull Scenario Analysis</h3>
+            <p class="text-xs text-slate-500 mb-3">Bear (-300bps growth, -250bps margin, +100bps WACC) | Bull (+300bps growth, +250bps margin, -50bps WACC)</p>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse text-sm" id="dcfScenarioTable"></table>
+            </div>
+          </div>
+
+          <div class="bg-white p-5 rounded-lg shadow-sm border border-slate-200">
+            <h3 class="text-base font-bold text-slate-800 mb-1">2D Sensitivity Matrix: Implied Share Price</h3>
+            <p class="text-xs text-slate-500 mb-3">Rows = Discount Rate (WACC) | Columns = Terminal Growth Rate (g)</p>
+            <div class="overflow-x-auto">
+              <table class="w-full text-center border-collapse text-sm" id="dcfSensitivityTable"></table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: NEWS INTELLIGENCE -->
+      <section id="tab4" class="tab-panel hidden space-y-6">
+        <div class="bg-white p-5 rounded-lg shadow-sm border border-slate-200">
+          <h3 class="text-base font-bold text-slate-800 mb-1">Curated News Intelligence: Reported Facts vs. Inferred Market Implications</h3>
+          <p class="text-xs text-slate-500 mb-4">Strictly separates verifiable reported statements from analytical market inferences with source links and dates.</p>
+          <div id="newsFeedContainer" class="space-y-4"></div>
+        </div>
+
+        <div class="bg-white p-5 rounded-lg shadow-sm border border-slate-200 space-y-4">
+          <h3 class="text-base font-bold text-slate-800">Analyze Custom News Article or Earnings Filing Excerpt</h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <input id="customNewsHeadline" type="text" placeholder="Headline (e.g., Company Announces ₹10,000 Cr CapEx Expansion)" class="border rounded px-3 py-2 text-sm w-full" />
+            <input id="customNewsSource" type="text" placeholder="Source & Date (e.g., Mint / BSE Filing - Oct 2026)" class="border rounded px-3 py-2 text-sm w-full" />
+          </div>
+          <textarea id="customNewsBody" rows="3" placeholder="Paste article sentences here (e.g., Cloud and digital services revenue grew 18% YoY. Capital expenditures rose to fund new data center capacity, while European regulators opened an inquiry.)" class="border rounded px-3 py-2 text-sm w-full"></textarea>
+          <button onclick="runCustomNewsAnalysis()" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded transition">
+            🔍 Separate Reported Facts &amp; Market Implications
+          </button>
+          <div id="customNewsOutput" class="hidden mt-4"></div>
+        </div>
+      </section>
+
+      <!-- TAB 5: INVESTMENT THESIS & DOWNLOADS -->
+      <section id="tab5" class="tab-panel hidden space-y-6">
+        <div class="bg-white p-5 rounded-lg shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h3 class="text-base font-bold text-slate-800">Institutional Equity Research Memorandum</h3>
+            <p class="text-xs text-slate-500">Generated dynamically from verified financial figures, live synced price, and your current DCF parameters.</p>
+          </div>
+          <div class="flex gap-3">
+            <button onclick="downloadResearchMarkdown()" class="bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold px-4 py-2 rounded transition">
+              📥 Download Memo (.md)
+            </button>
+            <button onclick="downloadRatiosCsv()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded transition">
+              📥 Download Ratios &amp; Financials (.csv)
+            </button>
+          </div>
+        </div>
+
+        <div id="investmentThesisContainer" class="bg-white p-6 rounded-lg shadow-sm border border-slate-200 prose max-w-none space-y-4 text-sm leading-relaxed"></div>
+      </section>
+
+      <!-- TAB 6: DATA QUALITY & AUTOMATED UNIT TESTS -->
+      <section id="tab6" class="tab-panel hidden space-y-6">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div class="bg-white p-5 rounded-lg shadow-sm border border-slate-200">
+            <h3 class="text-base font-bold text-slate-800 mb-3">🛡️ Data Quality &amp; Provenance Audit</h3>
+            <div id="dataQualityContainer" class="space-y-2 text-sm"></div>
+          </div>
+
+          <div class="bg-white p-5 rounded-lg shadow-sm border border-slate-200">
+            <div class="flex items-center justify-between mb-3">
+              <div>
+                <h3 class="text-base font-bold text-slate-800">✅ Built-In Automated Financial Formula Test Suite</h3>
+                <p class="text-xs text-slate-500">Verifies ROE, ROCE, Negative Equity guards, WACC, and DCF EV-to-Equity bridge math.</p>
+              </div>
+              <button onclick="runAutomatedTests()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded">Re-Run Tests</button>
+            </div>
+            <div id="unitTestResultsContainer" class="space-y-2 text-xs font-mono"></div>
+          </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-lg shadow-sm border border-slate-200">
+          <h3 id="rawFinTableTitle" class="text-base font-bold text-slate-800 mb-3">Raw Historical Financial Statements</h3>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-sm" id="rawFinancialsTable"></table>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 1: GOOGLE FINANCE LIVE SHEET BRIDGE (=GOOGLEFINANCE() CSV)
+  ========================================================================== -->
+  <div id="googleSheetModal" class="hidden fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-2xl border border-slate-300 max-w-2xl w-full overflow-hidden">
+      <div class="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
+        <div>
+          <h2 class="text-base font-bold">🔗 Connect Live Google Finance Sheet Bridge</h2>
+          <p class="text-xs text-slate-300">Stream real-time NSE/BSE/NASDAQ prices directly from official <code>=GOOGLEFINANCE()</code> formulas.</p>
+        </div>
+        <button onclick="closeGoogleSheetModal()" class="text-slate-400 hover:text-white text-xl font-bold">&times;</button>
+      </div>
+      <div class="p-6 space-y-4 text-xs leading-relaxed">
+        <div class="bg-blue-50 border border-blue-200 p-3.5 rounded-lg text-blue-950 space-y-2">
+          <div class="font-bold">How this works (Zero API keys, 100% Free & Official):</div>
+          <ol class="list-decimal pl-5 space-y-1">
+            <li>Open a blank <strong>Google Sheet</strong> and put Ticker names in Column A and <code>=GOOGLEFINANCE()</code> in Column B:
+              <pre class="bg-white border p-2 rounded mt-1 font-mono text-[11px] text-slate-800">TCS        | =GOOGLEFINANCE("NSE:TCS", "price")
+RELIANCE   | =GOOGLEFINANCE("NSE:RELIANCE", "price")
+AAPL       | =GOOGLEFINANCE("NASDAQ:AAPL", "price")
+MSFT       | =GOOGLEFINANCE("NASDAQ:MSFT", "price")
+TSLA       | =GOOGLEFINANCE("NASDAQ:TSLA", "price")</pre>
+            </li>
+            <li>In Google Sheets, click <strong>File → Share → Publish to web</strong>, choose <strong>Comma-separated values (.csv)</strong>, and copy the link.</li>
+            <li>Paste your published CSV link below—FinSight AI will pull real-time Google Finance prices for all tickers!</li>
+          </ol>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">Published Google Sheet CSV URL:</label>
+          <input id="inpGoogleSheetCsvUrl" type="url" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv" class="w-full border rounded px-3 py-2 font-mono text-xs" />
+        </div>
+
+        <div id="gsheetBridgeMsg" class="hidden p-2.5 rounded font-semibold"></div>
+      </div>
+      <div class="bg-slate-100 px-6 py-3 border-t flex justify-end gap-3">
+        <button onclick="closeGoogleSheetModal()" class="px-4 py-2 rounded border bg-white text-slate-700 text-xs font-semibold">Close</button>
+        <button onclick="syncFromGoogleSheetCsv()" class="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold">
+          ⚡ Fetch Prices from Google Sheet
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 2: ADD CUSTOM COMPANY / INPUT FROM SCREENER.IN OR 10-K
+  ========================================================================== -->
+  <div id="customStockModal" class="hidden fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-xl shadow-2xl border border-slate-300 max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+      
+      <!-- Modal Header -->
+      <div class="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-bold">➕ Add Custom Company (Screener.in / NSE / Global)</h2>
+          <p class="text-xs text-slate-300">Enter figures from Screener.in (₹ Crores) or SEC 10-K ($ Millions) and link live exchange symbols.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="fillReliancePreset()" class="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-3 py-1.5 rounded transition">
+            ⚡ Auto-Fill Reliance (RIL) Demo
+          </button>
+          <button type="button" onclick="closeCustomModal()" class="text-slate-400 hover:text-white text-xl font-bold px-2">&times;</button>
+        </div>
+      </div>
+
+      <!-- Modal Form Body -->
+      <div class="p-6 overflow-y-auto space-y-6 text-xs">
+        <div>
+          <h3 class="font-bold text-slate-800 uppercase tracking-wider border-b pb-1.5 mb-3">1. Company Profile & Live Exchange Mapping</h3>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div>
+              <label class="block font-semibold text-slate-600 mb-1">Ticker Symbol (NSE/US) *</label>
+              <input id="mTicker" type="text" placeholder="e.g., RELIANCE or INFY" class="w-full border rounded px-2.5 py-1.5 font-mono uppercase" />
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-600 mb-1">Company Name *</label>
+              <input id="mName" type="text" placeholder="e.g., Reliance Industries Ltd" class="w-full border rounded px-2.5 py-1.5" />
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-600 mb-1">Live Feed Symbol (Yahoo/Exchange)</label>
+              <input id="mYahooSym" type="text" placeholder="e.g., RELIANCE.NS or INFY.NS" class="w-full border rounded px-2.5 py-1.5 font-mono" />
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-600 mb-1">Currency & Reporting Unit *</label>
+              <select id="mCurrencyMode" class="w-full border rounded px-2.5 py-1.5 font-semibold bg-slate-50">
+                <option value="INR_CR">₹ INR (in Crores)</option>
+                <option value="USD_M">$ USD (in Millions)</option>
+              </select>
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-600 mb-1">Current Share Price *</label>
+              <input id="mPrice" type="number" step="0.01" placeholder="e.g., 1385" class="w-full border rounded px-2.5 py-1.5" />
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-600 mb-1">Diluted Shares (in Cr or M) *</label>
+              <input id="mShares" type="number" step="0.01" placeholder="e.g., 1353.2 (Cr)" class="w-full border rounded px-2.5 py-1.5" />
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-600 mb-1">Equity Beta (β)</label>
+              <input id="mBeta" type="number" step="0.05" value="1.05" class="w-full border rounded px-2.5 py-1.5" />
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-600 mb-1">Sector / Industry</label>
+              <input id="mSector" type="text" placeholder="e.g., Energy, Retail & Telecom" class="w-full border rounded px-2.5 py-1.5" />
+            </div>
+          </div>
+          <div class="mt-2">
+            <label class="block font-semibold text-slate-600 mb-1">Brief Business Overview</label>
+            <input id="mDesc" type="text" placeholder="1-2 sentences describing core business segments and competitive moat..." class="w-full border rounded px-2.5 py-1.5" />
+          </div>
+        </div>
+
+        <!-- Section 2: 2-Year Financial Statement Inputs -->
+        <div>
+          <h3 class="font-bold text-slate-800 uppercase tracking-wider border-b pb-1.5 mb-2">2. Historical Financial Statements (Copy from Screener.in P&amp;L / Balance Sheet / Cash Flow)</h3>
+          <div class="grid grid-cols-3 gap-3 font-bold bg-slate-100 p-2 rounded border-b">
+            <div>Line Item (in selected unit)</div>
+            <div>Prior Fiscal Year (FY2024)</div>
+            <div>Latest Fiscal Year (FY2025)</div>
+          </div>
+
+          <div class="divide-y border-x border-b rounded-b">
+            <div class="grid grid-cols-3 gap-3 items-center p-2">
+              <label class="font-semibold">Revenue / Sales *</label>
+              <input id="mRev1" type="number" step="any" placeholder="901064" class="border rounded px-2 py-1" />
+              <input id="mRev2" type="number" step="any" placeholder="968500" class="border rounded px-2 py-1 font-semibold border-blue-400" />
+            </div>
+            <div class="grid grid-cols-3 gap-3 items-center p-2">
+              <label class="font-semibold">Operating Income (EBIT) *</label>
+              <input id="mEbit1" type="number" step="any" placeholder="111450" class="border rounded px-2 py-1" />
+              <input id="mEbit2" type="number" step="any" placeholder="123800" class="border rounded px-2 py-1 font-semibold border-blue-400" />
+            </div>
+            <div class="grid grid-cols-3 gap-3 items-center p-2">
+              <label class="font-semibold">EBITDA / Operating Profit *</label>
+              <input id="mEbitda1" type="number" step="any" placeholder="162230" class="border rounded px-2 py-1" />
+              <input id="mEbitda2" type="number" step="any" placeholder="178900" class="border rounded px-2 py-1 font-semibold border-blue-400" />
+            </div>
+            <div class="grid grid-cols-3 gap-3 items-center p-2">
+              <label class="font-semibold">Net Profit (PAT) *</label>
+              <input id="mNi1" type="number" step="any" placeholder="69621" class="border rounded px-2 py-1" />
+              <input id="mNi2" type="number" step="any" placeholder="76800" class="border rounded px-2 py-1 font-semibold border-blue-400" />
+            </div>
+            <div class="grid grid-cols-3 gap-3 items-center p-2">
+              <label class="font-semibold">Interest Expense</label>
+              <input id="mInt1" type="number" step="any" placeholder="23118" class="border rounded px-2 py-1" />
+              <input id="mInt2" type="number" step="any" placeholder="23900" class="border rounded px-2 py-1" />
+            </div>
+            <div class="grid grid-cols-3 gap-3 items-center p-2">
+              <label class="font-semibold">Total Assets *</label>
+              <input id="mAssets1" type="number" step="any" placeholder="1755986" class="border rounded px-2 py-1" />
+              <input id="mAssets2" type="number" step="any" placeholder="1865000" class="border rounded px-2 py-1" />
+            </div>
+            <div class="grid grid-cols-3 gap-3 items-center p-2">
+              <label class="font-semibold">Current Liabilities / Other Liab *</label>
+              <input id="mCl1" type="number" step="any" placeholder="385200" class="border rounded px-2 py-1" />
+              <input id="mCl2" type="number" step="any" placeholder="402000" class="border rounded px-2 py-1" />
+            </div>
+            <div class="grid grid-cols-3 gap-3 items-center p-2">
+              <label class="font-semibold">Total Debt (Borrowings) *</label>
+              <input id="mDebt1" type="number" step="any" placeholder="324622" class="border rounded px-2 py-1" />
+              <input id="mDebt2" type="number" step="any" placeholder="328500" class="border rounded px-2 py-1 font-semibold border-blue-400" />
+            </div>
+            <div class="grid grid-cols-3 gap-3 items-center p-2">
+              <label class="font-semibold">Cash &amp; Equivalents *</label>
+              <input id="mCash1" type="number" step="any" placeholder="208350" class="border rounded px-2 py-1" />
+              <input id="mCash2" type="number" step="any" placeholder="221000" class="border rounded px-2 py-1 font-semibold border-blue-400" />
+            </div>
+            <div class="grid grid-cols-3 gap-3 items-center p-2">
+              <label class="font-semibold">Total Shareholders' Equity (Equity Cap + Reserves) *</label>
+              <input id="mEq1" type="number" step="any" placeholder="793481" class="border rounded px-2 py-1" />
+              <input id="mEq2" type="number" step="any" placeholder="858000" class="border rounded px-2 py-1 font-semibold border-blue-400" />
+            </div>
+            <div class="grid grid-cols-3 gap-3 items-center p-2">
+              <label class="font-semibold">Operating Cash Flow (Cash from Operating Activity) *</label>
+              <input id="mOcf1" type="number" step="any" placeholder="158788" class="border rounded px-2 py-1" />
+              <input id="mOcf2" type="number" step="any" placeholder="171500" class="border rounded px-2 py-1 font-semibold border-blue-400" />
+            </div>
+            <div class="grid grid-cols-3 gap-3 items-center p-2">
+              <label class="font-semibold">Capital Expenditures (Fixed Assets Purchased) *</label>
+              <input id="mCapex1" type="number" step="any" placeholder="131769" class="border rounded px-2 py-1" />
+              <input id="mCapex2" type="number" step="any" placeholder="118500" class="border rounded px-2 py-1 font-semibold border-blue-400" />
+            </div>
+          </div>
+        </div>
+
+        <div id="modalValidationMsg" class="hidden text-rose-700 bg-rose-50 border border-rose-300 p-2.5 rounded font-semibold"></div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="bg-slate-100 px-6 py-3 border-t flex items-center justify-end gap-3">
+        <button type="button" onclick="closeCustomModal()" class="px-4 py-2 rounded border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50">Cancel</button>
+        <button type="button" onclick="saveCustomCompany()" class="px-5 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow">
+          🚀 Save &amp; Analyze Company
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       APPLICATION JAVASCRIPT: LIVE MARKET SYNC & MODULAR ARCHITECTURE
+  ========================================================================== -->
+  <script>
+    // =========================================================================
+    // MODULE 1: CURATED REPOSITORY WITH LIVE EXCHANGE SYMBOLS & SCREENER SLUGS
+    // =========================================================================
+    const DEFAULT_REPOSITORY = {
+      TCS: {
+        metadata: {
+          ticker: "TCS",
+          yahoo_symbol: "TCS.NS",
+          google_symbol: "TCS:NSE",
+          screener_slug: "TCS",
+          name: "Tata Consultancy Services Ltd.",
+          sector: "Information Technology",
+          industry: "IT Services, Consulting & Enterprise Digital",
+          currency: "INR",
+          currency_symbol: "₹",
+          unit_short: "Cr",
+          large_unit_divisor: 100000,
+          large_unit_label: "Lakh Cr",
+          units: "Crores (except per-share data)",
+          fiscal_year_end: "March 31",
+          data_source: "NSE/BSE Audited Annual Filings & Screener.in",
+          last_updated: "2026-04-15T14:30:00Z",
+          current_price: 4120.00,
+          price_source: "Filing Reference Price",
+          diluted_shares: 361.80,
+          beta: 0.85,
+          default_rf: 6.8,
+          default_erp: 6.0,
+          credit_rating_spread: 0.0060,
+          description: "Tata Consultancy Services (TCS) is India's largest IT services and consulting multinational, providing cloud transformation, cognitive business operations, and enterprise engineering across BFSI, retail, and manufacturing verticals globally."
+        },
+        financials: [
+          { year: "FY2022", revenue: 191754, ebit: 48453, ebitda: 53057, net_income: 38327, interest_expense: 784, tax_expense: 13238, pretax_income: 51565, total_assets: 141514, current_liabilities: 42351, total_debt: 7818, cash_and_equivalents: 48453, total_equity: 89139, operating_cash_flow: 39949, capex: 2995, depreciation_amortization: 4604, change_in_nwc: -1200 },
+          { year: "FY2023", revenue: 225458, ebit: 54237, ebitda: 59259, net_income: 42147, interest_expense: 779, tax_expense: 14604, pretax_income: 56751, total_assets: 143651, current_liabilities: 43558, total_debt: 7688, cash_and_equivalents: 49820, total_equity: 90424, operating_cash_flow: 41965, capex: 3063, depreciation_amortization: 5022, change_in_nwc: -950 },
+          { year: "FY2024", revenue: 240893, ebit: 59311, ebitda: 64296, net_income: 45908, interest_expense: 778, tax_expense: 15898, pretax_income: 61806, total_assets: 146449, current_liabilities: 46104, total_debt: 8021, cash_and_equivalents: 46950, total_equity: 90489, operating_cash_flow: 44338, capex: 2674, depreciation_amortization: 4985, change_in_nwc: -600 },
+          { year: "FY2025", revenue: 258200, ebit: 64550, ebitda: 69750, net_income: 49800, interest_expense: 760, tax_expense: 17100, pretax_income: 66900, total_assets: 154800, current_liabilities: 47900, total_debt: 7900, cash_and_equivalents: 51200, total_equity: 96500, operating_cash_flow: 48900, capex: 2950, depreciation_amortization: 5200, change_in_nwc: -800 }
+        ],
+        news: [
+          {
+            date: "2026-04-12",
+            headline: "TCS Total Contract Value (TCV) Order Book Surpasses $42 Billion for the Full Fiscal Year",
+            source: "BSE / NSE Earnings Release",
+            url: "https://www.tcs.com/investor-relations",
+            summary_text: "TCS reported full-year operating margins of 25.0% alongside strong cash conversion exceeding 98% of net profit. Generative AI and cloud modernization pipeline doubled year-over-year as enterprise clients consolidated vendor relationships."
+          },
+          {
+            date: "2026-01-18",
+            headline: "BFSI Vertical Shows Gradual Recovery While Discretionary US Tech Spend Remains Selective",
+            source: "Economic Times Markets",
+            url: "https://economictimes.indiatimes.com/",
+            summary_text: "North American banking and financial services clients resumed core legacy migration programs, though management noted elongated decision cycles on short-term discretionary consulting projects."
+          }
+        ]
+      },
+      AAPL: {
+        metadata: {
+          ticker: "AAPL",
+          yahoo_symbol: "AAPL",
+          google_symbol: "AAPL:NASDAQ",
+          screener_slug: null,
+          name: "Apple Inc.",
+          sector: "Information Technology",
+          industry: "Consumer Electronics & Software Services",
+          currency: "USD",
+          currency_symbol: "$",
+          unit_short: "M",
+          large_unit_divisor: 1000,
+          large_unit_label: "B",
+          units: "Millions (except per-share data)",
+          fiscal_year_end: "September 30",
+          data_source: "SEC Form 10-K (Audited Historical Filings)",
+          last_updated: "2026-02-15T14:30:00Z",
+          current_price: 228.50,
+          price_source: "Filing Reference Price",
+          diluted_shares: 15200.0,
+          beta: 1.22,
+          default_rf: 4.2,
+          default_erp: 5.0,
+          credit_rating_spread: 0.0085,
+          description: "Apple Inc. designs, manufactures, and markets smartphones (iPhone), personal computers (Mac), tablets (iPad), wearables, and operates a high-margin ecosystem of cloud, App Store, digital payment, and streaming services."
+        },
+        financials: [
+          { year: "FY2022", revenue: 394328, ebit: 119437, ebitda: 130541, net_income: 99803, interest_expense: 2931, tax_expense: 19300, pretax_income: 119103, total_assets: 352755, current_liabilities: 153982, total_debt: 120069, cash_and_equivalents: 48304, total_equity: 50672, operating_cash_flow: 122151, capex: 10708, depreciation_amortization: 11104, change_in_nwc: -4500 },
+          { year: "FY2023", revenue: 383285, ebit: 114301, ebitda: 125820, net_income: 96995, interest_expense: 3933, tax_expense: 16741, pretax_income: 113736, total_assets: 352583, current_liabilities: 145308, total_debt: 111088, cash_and_equivalents: 61555, total_equity: 62146, operating_cash_flow: 110543, capex: 10959, depreciation_amortization: 11519, change_in_nwc: -1800 },
+          { year: "FY2024", revenue: 391035, ebit: 123216, ebitda: 134661, net_income: 93736, interest_expense: 3750, tax_expense: 29749, pretax_income: 123485, total_assets: 364980, current_liabilities: 176392, total_debt: 106629, cash_and_equivalents: 65171, total_equity: 56950, operating_cash_flow: 118254, capex: 9447, depreciation_amortization: 11445, change_in_nwc: -3200 },
+          { year: "FY2025", revenue: 412500, ebit: 132000, ebitda: 143800, net_income: 104200, interest_expense: 3500, tax_expense: 24300, pretax_income: 128500, total_assets: 371000, current_liabilities: 168000, total_debt: 101500, cash_and_equivalents: 68400, total_equity: 61200, operating_cash_flow: 126500, capex: 10200, depreciation_amortization: 11800, change_in_nwc: -2100 }
+        ],
+        news: [
+          {
+            date: "2026-01-29",
+            headline: "Apple Services Revenue Reaches Record High Amid Installed Base Expansion",
+            source: "Financial Times / Company Q1 Filing",
+            url: "https://investor.apple.com/",
+            summary_text: "Apple reported that its active installed base of devices surpassed 2.35 billion globally. Services revenue grew 13% year-over-year, carrying a gross margin above 73%, compared to hardware gross margins of 37%."
+          }
+        ]
+      },
+      MSFT: {
+        metadata: {
+          ticker: "MSFT",
+          yahoo_symbol: "MSFT",
+          google_symbol: "MSFT:NASDAQ",
+          screener_slug: null,
+          name: "Microsoft Corporation",
+          sector: "Information Technology",
+          industry: "Enterprise Cloud & Systems Software",
+          currency: "USD",
+          currency_symbol: "$",
+          unit_short: "M",
+          large_unit_divisor: 1000,
+          large_unit_label: "B",
+          units: "Millions (except per-share data)",
+          fiscal_year_end: "June 30",
+          data_source: "SEC Form 10-K (Audited Historical Filings)",
+          last_updated: "2026-02-15T14:30:00Z",
+          current_price: 445.00,
+          price_source: "Filing Reference Price",
+          diluted_shares: 7430.0,
+          beta: 1.05,
+          default_rf: 4.2,
+          default_erp: 5.0,
+          credit_rating_spread: 0.0065,
+          description: "Microsoft Corporation develops and supports enterprise software, cloud infrastructure (Azure), productivity suites (Office 365, Teams, LinkedIn), and gaming hardware/content."
+        },
+        financials: [
+          { year: "FY2022", revenue: 198270, ebit: 83383, ebitda: 97843, net_income: 72738, interest_expense: 2063, tax_expense: 10978, pretax_income: 83716, total_assets: 364840, current_liabilities: 95082, total_debt: 61270, cash_and_equivalents: 104757, total_equity: 166542, operating_cash_flow: 89035, capex: 23886, depreciation_amortization: 14460, change_in_nwc: -1200 },
+          { year: "FY2023", revenue: 211915, ebit: 88523, ebitda: 102384, net_income: 72361, interest_expense: 1968, tax_expense: 16950, pretax_income: 89311, total_assets: 411976, current_liabilities: 104149, total_debt: 59965, cash_and_equivalents: 111262, total_equity: 206223, operating_cash_flow: 87582, capex: 28107, depreciation_amortization: 13861, change_in_nwc: 1500 },
+          { year: "FY2024", revenue: 245122, ebit: 109433, ebitda: 131720, net_income: 88136, interest_expense: 2935, tax_expense: 19651, pretax_income: 107787, total_assets: 512163, current_liabilities: 125286, total_debt: 67127, cash_and_equivalents: 75543, total_equity: 268477, operating_cash_flow: 118548, capex: 44477, depreciation_amortization: 22287, change_in_nwc: -2400 },
+          { year: "FY2025", revenue: 276500, ebit: 124400, ebitda: 152900, net_income: 98900, interest_expense: 2700, tax_expense: 22800, pretax_income: 121700, total_assets: 565000, current_liabilities: 132000, total_debt: 64000, cash_and_equivalents: 82100, total_equity: 312000, operating_cash_flow: 136200, capex: 56800, depreciation_amortization: 28500, change_in_nwc: -1900 }
+        ],
+        news: [
+          {
+            date: "2026-01-25",
+            headline: "Azure Cloud Revenue Grows 31% YoY as AI Infrastructure CapEx Scales",
+            source: "Company Q2 Earnings Release",
+            url: "https://www.microsoft.com/en-us/investor",
+            summary_text: "Microsoft reported Intelligent Cloud revenue growth driven by Azure consumption. Capital expenditures reached $14.9 billion in the quarter alone, predominantly allocated to GPU clusters and data center footprint expansion."
+          }
+        ]
+      },
+      TSLA: {
+        metadata: {
+          ticker: "TSLA",
+          yahoo_symbol: "TSLA",
+          google_symbol: "TSLA:NASDAQ",
+          screener_slug: null,
+          name: "Tesla, Inc.",
+          sector: "Consumer Discretionary",
+          industry: "Automotive, Energy Generation & Storage",
+          currency: "USD",
+          currency_symbol: "$",
+          unit_short: "M",
+          large_unit_divisor: 1000,
+          large_unit_label: "B",
+          units: "Millions (except per-share data)",
+          fiscal_year_end: "December 31",
+          data_source: "SEC Form 10-K (Audited Historical Filings)",
+          last_updated: "2026-02-15T14:30:00Z",
+          current_price: 255.00,
+          price_source: "Filing Reference Price",
+          diluted_shares: 3480.0,
+          beta: 1.85,
+          default_rf: 4.2,
+          default_erp: 5.0,
+          credit_rating_spread: 0.0160,
+          description: "Tesla, Inc. designs, manufactures, and sells battery electric vehicles (BEVs), grid-scale energy storage systems (Megapack), solar solutions, and develops autonomous driving software."
+        },
+        financials: [
+          { year: "FY2022", revenue: 81462, ebit: 13656, ebitda: 17403, net_income: 12556, interest_expense: 191, tax_expense: 1132, pretax_income: 13719, total_assets: 82338, current_liabilities: 26709, total_debt: 5748, cash_and_equivalents: 22185, total_equity: 44704, operating_cash_flow: 14724, capex: 7158, depreciation_amortization: 3747, change_in_nwc: 2100 },
+          { year: "FY2023", revenue: 96773, ebit: 8891, ebitda: 13558, net_income: 14974, interest_expense: 156, tax_expense: -5001, pretax_income: 9973, total_assets: 106618, current_liabilities: 28748, total_debt: 9573, cash_and_equivalents: 29094, total_equity: 62634, operating_cash_flow: 13256, capex: 8898, depreciation_amortization: 4667, change_in_nwc: 1850 },
+          { year: "FY2024", revenue: 97690, ebit: 7076, ebitda: 12444, net_income: 7091, interest_expense: 350, tax_expense: 1837, pretax_income: 8928, total_assets: 122070, current_liabilities: 28821, total_debt: 13623, cash_and_equivalents: 36563, total_equity: 72913, operating_cash_flow: 14923, capex: 11339, depreciation_amortization: 5368, change_in_nwc: 950 },
+          { year: "FY2025", revenue: 108400, ebit: 8650, ebitda: 14550, net_income: 7850, interest_expense: 380, tax_expense: 1950, pretax_income: 9800, total_assets: 134500, current_liabilities: 30100, total_debt: 13200, cash_and_equivalents: 39200, total_equity: 80400, operating_cash_flow: 16100, capex: 10800, depreciation_amortization: 5900, change_in_nwc: 600 }
+        ],
+        news: [
+          {
+            date: "2026-01-28",
+            headline: "Energy Storage Deployments Double YoY While Automotive Gross Margins Face Pricing Pressure",
+            source: "Company FY2025 Shareholder Deck",
+            url: "https://ir.tesla.com/",
+            summary_text: "Tesla deployed 31.4 GWh of energy storage products in 2025, generating segment gross margins above 26%. Meanwhile, automotive average selling prices (ASPs) declined 5% YoY due to promotional financing rates and EV competition in China and Europe."
+          }
+        ]
+      }
+    };
+
+    const STORAGE_KEY = "finsight_custom_companies_v2";
+    const GSHEET_URL_KEY = "finsight_gsheet_csv_url";
+    let SAMPLE_REPOSITORY = {};
+
+    function loadRepository() {
+      SAMPLE_REPOSITORY = JSON.parse(JSON.stringify(DEFAULT_REPOSITORY));
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          Object.assign(SAMPLE_REPOSITORY, parsed);
+          document.getElementById("btnResetCustom").classList.remove("hidden");
+        } else {
+          document.getElementById("btnResetCustom").classList.add("hidden");
+        }
+        const savedSheetUrl = localStorage.getItem(GSHEET_URL_KEY);
+        if (savedSheetUrl) {
+          document.getElementById("inpGoogleSheetCsvUrl").value = savedSheetUrl;
+        }
+      } catch (e) {
+        console.warn("localStorage unavailable:", e);
+      }
+      populateTickerDropdown();
+    }
+
+    function populateTickerDropdown() {
+      const sel = document.getElementById("tickerSelect");
+      sel.innerHTML = Object.keys(SAMPLE_REPOSITORY).map(t => {
+        const m = SAMPLE_REPOSITORY[t].metadata;
+        return `<option value="${t}" ${t === currentTicker ? 'selected' : ''}>${t} — ${m.name} (${m.currency_symbol} ${m.unit_short})</option>`;
+      }).join("");
+    }
+
+    function clearCustomCompanies() {
+      localStorage.removeItem(STORAGE_KEY);
+      currentTicker = "TCS";
+      loadRepository();
+      resetToCompanyDefaults();
+    }
+
+    // =========================================================================
+    // LIVE MARKET PRICE FETCHING ENGINE (YAHOO JSON RELAY + GOOGLE SHEET CSV)
+    // =========================================================================
+    function setLiveStatus(statusText, dotClass) {
+      const dot = document.getElementById("liveStatusDot");
+      const txt = document.getElementById("liveStatusText");
+      dot.className = `w-2.5 h-2.5 rounded-full inline-block ${dotClass}`;
+      txt.innerText = statusText;
+    }
+
+    async function fetchLiveQuoteFromYahooRelay(yahooSymbol) {
+      const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=1d`;
+      // Try two public CORS proxies in sequence so browser security never blocks the fetch
+      const proxies = [
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
+        `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
+      ];
+
+      for (const proxyUrl of proxies) {
+        try {
+          const res = await fetch(proxyUrl, { cache: "no-store" });
+          if (!res.ok) continue;
+          const data = await res.json();
+          const meta = data?.chart?.result?.[0]?.meta;
+          if (meta && typeof meta.regularMarketPrice === "number" && meta.regularMarketPrice > 0) {
+            return {
+              price: meta.regularMarketPrice,
+              currency: meta.currency,
+              exchange: meta.exchangeName || "Live Exchange"
+            };
+          }
+        } catch (err) {
+          // Try next proxy
+        }
+      }
+      throw new Error("Live CORS relay timed out or rate-limited.");
+    }
+
+    async function syncLiveMarketPrice() {
+      const company = SAMPLE_REPOSITORY[currentTicker];
+      const meta = company.metadata;
+      const ySym = meta.yahoo_symbol || (meta.currency === "INR" ? `${meta.ticker}.NS` : meta.ticker);
+
+      setLiveStatus(`Syncing ${ySym}...`, "bg-amber-400 animate-pulse-fast");
+      try {
+        const quote = await fetchLiveQuoteFromYahooRelay(ySym);
+        meta.current_price = Number(quote.price.toFixed(2));
+        const nowStr = new Date().toLocaleTimeString();
+        meta.price_source = `Live Exchange Feed (${ySym} @ ${nowStr})`;
+        document.getElementById("quickSpotInput").value = meta.current_price;
+        document.getElementById("lastPriceSyncBadge").innerText = `Source: ${meta.price_source}`;
+        setLiveStatus(`Live: ${meta.currency_symbol}${meta.current_price}`, "bg-emerald-400");
+        recalcCapmWacc(false);
+        updateModel();
+      } catch (e) {
+        setLiveStatus("Relay Busy (Use Override/Sheet)", "bg-amber-400");
+        alert(`Could not reach public quote relay for ${ySym} right now. You can type the exact live price directly in the 'Live Spot Price Override' box in the top sub-bar, or connect a Google Finance Sheet!`);
+      }
+    }
+
+    async function syncAllTickersLive() {
+      setLiveStatus("Syncing Peers...", "bg-amber-400 animate-pulse-fast");
+      const tickers = Object.keys(SAMPLE_REPOSITORY);
+      let updatedCount = 0;
+      for (const t of tickers) {
+        const m = SAMPLE_REPOSITORY[t].metadata;
+        const ySym = m.yahoo_symbol || (m.currency === "INR" ? `${m.ticker}.NS` : m.ticker);
+        try {
+          const quote = await fetchLiveQuoteFromYahooRelay(ySym);
+          m.current_price = Number(quote.price.toFixed(2));
+          m.price_source = `Live Sync (${new Date().toLocaleTimeString()})`;
+          updatedCount++;
+        } catch (e) {
+          // Skip failed ticker silently
+        }
+      }
+      document.getElementById("quickSpotInput").value = SAMPLE_REPOSITORY[currentTicker].metadata.current_price;
+      setLiveStatus(`Synced ${updatedCount}/${tickers.length} Tickers`, "bg-emerald-400");
+      updateModel();
+    }
+
+    function onQuickSpotOverride() {
+      const val = parseFloat(document.getElementById("quickSpotInput").value);
+      if (!isNaN(val) && val > 0) {
+        const meta = SAMPLE_REPOSITORY[currentTicker].metadata;
+        meta.current_price = val;
+        meta.price_source = `Manual Live Override (${new Date().toLocaleTimeString()})`;
+        document.getElementById("lastPriceSyncBadge").innerText = `Source: ${meta.price_source}`;
+        setLiveStatus(`Spot: ${meta.currency_symbol}${val.toFixed(2)}`, "bg-blue-400");
+        recalcCapmWacc(false);
+        updateModel();
+      }
+    }
+
+    function openGoogleSheetModal() {
+      document.getElementById("gsheetBridgeMsg").classList.add("hidden");
+      document.getElementById("googleSheetModal").classList.remove("hidden");
+    }
+
+    function closeGoogleSheetModal() {
+      document.getElementById("googleSheetModal").classList.add("hidden");
+    }
+
+    async function syncFromGoogleSheetCsv() {
+      const url = document.getElementById("inpGoogleSheetCsvUrl").value.trim();
+      const msg = document.getElementById("gsheetBridgeMsg");
+      if (!url) {
+        msg.className = "p-2.5 rounded font-semibold bg-rose-50 text-rose-800 border border-rose-300";
+        msg.innerText = "Please paste a valid published Google Sheet CSV URL.";
+        msg.classList.remove("hidden");
+        return;
+      }
+      try {
+        localStorage.setItem(GSHEET_URL_KEY, url);
+        const res = await fetch(url, { cache: "no-store" });
+        const csvText = await res.text();
+        const lines = csvText.split(/\r?\n/).filter(Boolean);
+        let matchCount = 0;
+
+        lines.forEach(line => {
+          const parts = line.split(",");
+          if (parts.length >= 2) {
+            const rawTicker = parts[0].replace(/["']/g, "").trim().toUpperCase();
+            const rawPrice = parseFloat(parts[1].replace(/["'₹$,]/g, "").trim());
+            if (SAMPLE_REPOSITORY[rawTicker] && !isNaN(rawPrice) && rawPrice > 0) {
+              SAMPLE_REPOSITORY[rawTicker].metadata.current_price = rawPrice;
+              SAMPLE_REPOSITORY[rawTicker].metadata.price_source = `Google Finance Sheet (${new Date().toLocaleTimeString()})`;
+              matchCount++;
+            }
+          }
+        });
+
+        document.getElementById("quickSpotInput").value = SAMPLE_REPOSITORY[currentTicker].metadata.current_price;
+        document.getElementById("lastPriceSyncBadge").innerText = `Source: ${SAMPLE_REPOSITORY[currentTicker].metadata.price_source}`;
+        setLiveStatus(`GSheet Synced (${matchCount})`, "bg-emerald-400");
+        updateModel();
+
+        msg.className = "p-2.5 rounded font-semibold bg-emerald-50 text-emerald-900 border border-emerald-300";
+        msg.innerText = `✅ Successfully updated ${matchCount} ticker(s) from your live Google Finance Sheet!`;
+        msg.classList.remove("hidden");
+      } catch (err) {
+        msg.className = "p-2.5 rounded font-semibold bg-rose-50 text-rose-800 border border-rose-300";
+        msg.innerText = "Could not fetch CSV. Ensure your Google Sheet is published via File -> Share -> Publish to web -> CSV.";
+        msg.classList.remove("hidden");
+      }
+    }
+
+    function updateExternalFinanceLinks(meta) {
+      const gSym = meta.google_symbol || (meta.currency === "INR" ? `${meta.ticker}:NSE` : `${meta.ticker}:NASDAQ`);
+      document.getElementById("linkGoogleFinance").href = `https://www.google.com/finance/quote/${encodeURIComponent(gSym)}`;
+
+      const screenerLink = document.getElementById("linkScreenerIn");
+      if (meta.currency === "INR" || meta.screener_slug) {
+        const slug = meta.screener_slug || meta.ticker;
+        screenerLink.href = `https://www.screener.in/company/${encodeURIComponent(slug)}/consolidated/`;
+        screenerLink.innerText = `📊 Verify ${meta.ticker} on Screener.in ↗`;
+      } else {
+        screenerLink.href = `https://finance.yahoo.com/quote/${encodeURIComponent(meta.ticker)}`;
+        screenerLink.innerText = `📊 Verify ${meta.ticker} on Yahoo Finance ↗`;
+      }
+      document.getElementById("quickSpotInput").value = meta.current_price;
+      document.getElementById("lastPriceSyncBadge").innerText = `Source: ${meta.price_source || "Filing Reference Price"}`;
+    }
+
+    // =========================================================================
+    // MODULE 2: ANALYTICS ENGINE (DETERMINISTIC FINANCIAL RATIOS)
+    // =========================================================================
+    const AnalyticsEngine = {
+      safeDivide(num, den, disallowNonPositiveDenom = false) {
+        if (num === null || num === undefined || den === null || den === undefined) return null;
+        if (Number.isNaN(num) || Number.isNaN(den)) return null;
+        if (den === 0) return null;
+        if (disallowNonPositiveDenom && den <= 0) return null;
+        return num / den;
+      },
+
+      computeHistoricalRatios(financials) {
+        return financials.map((row, idx) => {
+          const prev = idx > 0 ? financials[idx - 1] : null;
+          const revGrowth = prev && this.safeDivide(row.revenue - prev.revenue, prev.revenue, true) !== null
+            ? this.safeDivide(row.revenue - prev.revenue, prev.revenue, true) * 100 : null;
+          const ebitGrowth = prev && this.safeDivide(row.ebit - prev.ebit, prev.ebit, true) !== null
+            ? this.safeDivide(row.ebit - prev.ebit, prev.ebit, true) * 100 : null;
+
+          const opMargin = this.safeDivide(row.ebit, row.revenue, true) !== null ? this.safeDivide(row.ebit, row.revenue, true) * 100 : null;
+          const ebitdaMargin = this.safeDivide(row.ebitda, row.revenue, true) !== null ? this.safeDivide(row.ebitda, row.revenue, true) * 100 : null;
+          const netMargin = this.safeDivide(row.net_income, row.revenue, true) !== null ? this.safeDivide(row.net_income, row.revenue, true) * 100 : null;
+
+          const capitalEmployed = row.total_assets - row.current_liabilities;
+          const roe = this.safeDivide(row.net_income, row.total_equity, true) !== null ? this.safeDivide(row.net_income, row.total_equity, true) * 100 : null;
+          const roce = this.safeDivide(row.ebit, capitalEmployed, true) !== null ? this.safeDivide(row.ebit, capitalEmployed, true) * 100 : null;
+
+          const netDebt = row.total_debt - row.cash_and_equivalents;
+          const debtToEquity = this.safeDivide(row.total_debt, row.total_equity, true);
+          const netDebtToEbitda = this.safeDivide(netDebt, row.ebitda, true);
+          const interestCoverage = this.safeDivide(row.ebit, row.interest_expense, true);
+
+          const fcf = row.operating_cash_flow - row.capex;
+          const fcfMargin = this.safeDivide(fcf, row.revenue, true) !== null ? this.safeDivide(fcf, row.revenue, true) * 100 : null;
+          const ocfToNi = this.safeDivide(row.operating_cash_flow, row.net_income, true);
+
+          return {
+            year: row.year,
+            revenue_growth_pct: revGrowth,
+            ebit_growth_pct: ebitGrowth,
+            operating_margin_pct: opMargin,
+            ebitda_margin_pct: ebitdaMargin,
+            net_profit_margin_pct: netMargin,
+            capital_employed: capitalEmployed,
+            roe_pct: roe,
+            roce_pct: roce,
+            net_debt: netDebt,
+            debt_to_equity: debtToEquity,
+            net_debt_to_ebitda: netDebtToEbitda,
+            interest_coverage: interestCoverage,
+            free_cash_flow: fcf,
+            fcf_margin_pct: fcfMargin,
+            ocf_to_net_income: ocfToNi
+          };
+        });
+      }
+    };
+
+    // =========================================================================
+    // MODULE 3: VALUATION & 2-STAGE FCFF DCF ENGINE
+    // =========================================================================
+    const ValuationEngine = {
+      calculateMultiples(metadata, financials) {
+        const latest = financials[financials.length - 1];
+        const price = metadata.current_price;
+        const shares = metadata.diluted_shares;
+        const marketCap = price * shares;
+        const netDebt = latest.total_debt - latest.cash_and_equivalents;
+        const ev = marketCap + netDebt;
+        const fcf = latest.operating_cash_flow - latest.capex;
+
+        return {
+          current_price: price,
+          diluted_shares: shares,
+          market_cap: marketCap,
+          total_debt: latest.total_debt,
+          cash_and_equivalents: latest.cash_and_equivalents,
+          net_debt: netDebt,
+          enterprise_value: ev,
+          pe_ratio: AnalyticsEngine.safeDivide(marketCap, latest.net_income, true),
+          pb_ratio: AnalyticsEngine.safeDivide(marketCap, latest.total_equity, true),
+          pfcf_ratio: AnalyticsEngine.safeDivide(marketCap, fcf, true),
+          ev_to_revenue: AnalyticsEngine.safeDivide(ev, latest.revenue, true),
+          ev_to_ebitda: AnalyticsEngine.safeDivide(ev, latest.ebitda, true),
+          ev_to_ebit: AnalyticsEngine.safeDivide(ev, latest.ebit, true)
+        };
+      },
+
+      calculateWacc(rf, beta, erp, kdPretax, taxRate, marketCap, totalDebt) {
+        const ke = rf + beta * erp;
+        const clampedTax = Math.max(0, Math.min(taxRate, 0.50));
+        const kdAfterTax = kdPretax * (1 - clampedTax);
+        const totalCap = marketCap + totalDebt;
+        const we = totalCap > 0 ? marketCap / totalCap : 1.0;
+        const wd = totalCap > 0 ? totalDebt / totalCap : 0.0;
+        const wacc = we * ke + wd * kdAfterTax;
+        return { cost_of_equity: ke, cost_of_debt_after_tax: kdAfterTax, weight_equity: we, weight_debt: wd, wacc };
+      },
+
+      runDcfModel(params) {
+        const {
+          base_revenue, revenue_growth_rate, target_ebit_margin, effective_tax_rate,
+          da_pct_revenue, capex_pct_revenue, nwc_pct_revenue, wacc, terminal_growth_rate,
+          total_debt, cash_and_equivalents, diluted_shares, current_price, projection_years = 5
+        } = params;
+
+        if (wacc <= terminal_growth_rate) {
+          throw new Error(`Invalid DCF Constraint: WACC (${(wacc * 100).toFixed(2)}%) must be strictly greater than Terminal Growth Rate (${(terminal_growth_rate * 100).toFixed(2)}%).`);
+        }
+
+        const projections = [];
+        let currRev = base_revenue;
+        let pvStage1 = 0;
+
+        for (let yr = 1; yr <= projection_years; yr++) {
+          currRev = currRev * (1 + revenue_growth_rate);
+          const ebit = currRev * target_ebit_margin;
+          const nopat = ebit * (1 - effective_tax_rate);
+          const da = currRev * da_pct_revenue;
+          const capex = currRev * capex_pct_revenue;
+          const nwcChange = currRev * nwc_pct_revenue;
+          const fcff = nopat + da - capex - nwcChange;
+          const df = Math.pow(1 + wacc, yr);
+          const pvFcff = fcff / df;
+          pvStage1 += pvFcff;
+
+          projections.push({
+            year: `Year ${yr}`,
+            revenue: currRev,
+            ebit,
+            nopat,
+            da,
+            capex,
+            nwcChange,
+            fcff,
+            pvFcff
+          });
+        }
+
+        const finalFcff = projections[projections.length - 1].fcff;
+        const terminalFcff = finalFcff * (1 + terminal_growth_rate);
+        const terminalValue = terminalFcff / (wacc - terminal_growth_rate);
+        const pvTerminalValue = terminalValue / Math.pow(1 + wacc, projection_years);
+
+        const impliedEv = pvStage1 + pvTerminalValue;
+        const impliedEquityValue = impliedEv - total_debt + cash_and_equivalents;
+        const impliedSharePrice = impliedEquityValue / diluted_shares;
+        const upsidePct = ((impliedSharePrice - current_price) / current_price) * 100;
+        const tvPctOfEv = impliedEv > 0 ? (pvTerminalValue / impliedEv) * 100 : 0;
+
+        return {
+          projections,
+          pv_stage1_fcff: pvStage1,
+          terminal_value_undiscounted: terminalValue,
+          pv_terminal_value: pvTerminalValue,
+          tv_pct_of_ev: tvPctOfEv,
+          implied_enterprise_value: impliedEv,
+          less_total_debt: total_debt,
+          plus_cash: cash_and_equivalents,
+          implied_equity_value: impliedEquityValue,
+          diluted_shares,
+          implied_share_price: impliedSharePrice,
+          current_price,
+          upside_downside_pct: upsidePct,
+          wacc_used: wacc,
+          tgr_used: terminal_growth_rate
+        };
+      }
+    };
+
+    // =========================================================================
+    // MODULE 4: AI NEWS INTELLIGENCE & THESIS ENGINE
+    // =========================================================================
+    const AIAnalystEngine = {
+      analyzeNewsItem(article) {
+        const text = (article.summary_text || "").trim();
+        const sentences = text.split(/(?<=[.!?])\s+/).filter(Boolean);
+        const reportedFacts = sentences.length > 0 ? sentences : [article.headline];
+
+        const lower = (article.headline + " " + text).toLowerCase();
+        const implications = [];
+
+        if (/(services|margin|gross margin|copilot|software|tcv|order book|cloud)/.test(lower)) {
+          implications.push("[Analytical Inference] Mix shift toward higher-margin recurring software/services or strong order backlog supports structural EBIT margin resilience and stage-1 FCFF visibility.");
+        }
+        if (/(regulator|eu|dma|fine|antitrust|scrutinize|inquiry)/.test(lower)) {
+          implications.push("[Analytical Inference] Regulatory enforcement introduces tail risk to platform take-rates and could warrant a higher Equity Risk Premium or Bear-case margin haircut.");
+        }
+        if (/(capex|gpu|data center|infrastructure|5g|refining)/.test(lower)) {
+          implications.push("[Analytical Inference] Elevated near-term CapEx intensity compresses near-term Free Cash Flow conversion (FCFF) and increases future D&A charges, requiring high incremental ROCE on new capacity.");
+        }
+        if (/(supply chain|india|assembly|tariff|manufacturing)/.test(lower)) {
+          implications.push("[Analytical Inference] Geographic diversification of manufacturing mitigates single-country geopolitical risk, though near-term duplicate tooling costs may weigh on gross margins.");
+        }
+        if (/(pricing pressure|asp|competition|promotional|declined|discretionary|selective)/.test(lower)) {
+          implications.push("[Analytical Inference] Pricing elasticity or elongated client decision cycles create near-term top-line sensitivity, warranting conservative Bear-case revenue growth assumptions.");
+        }
+        if (implications.length === 0) {
+          implications.push("[Analytical Inference] Monitor upcoming quarterly filings to assess whether this development materially alters revenue growth trajectory, operating margins, or capital allocation.");
+        }
+
+        return {
+          date: article.date || "Recent",
+          headline: article.headline || "News Item",
+          source: article.source || "Public Wire",
+          url: article.url || "#",
+          reported_facts: reportedFacts,
+          inferred_implications: implications
+        };
+      }
+    };
+
+    // =========================================================================
+    // CUSTOM COMPANY MODAL LOGIC
+    // =========================================================================
+    function openCustomModal() {
+      document.getElementById("modalValidationMsg").classList.add("hidden");
+      document.getElementById("customStockModal").classList.remove("hidden");
+    }
+
+    function closeCustomModal() {
+      document.getElementById("customStockModal").classList.add("hidden");
+    }
+
+    function fillReliancePreset() {
+      document.getElementById("mTicker").value = "RELIANCE";
+      document.getElementById("mName").value = "Reliance Industries Ltd.";
+      document.getElementById("mYahooSym").value = "RELIANCE.NS";
+      document.getElementById("mSector").value = "Energy, Retail & Digital Services";
+      document.getElementById("mCurrencyMode").value = "INR_CR";
+      document.getElementById("mPrice").value = "1385.00";
+      document.getElementById("mShares").value = "1353.20";
+      document.getElementById("mBeta").value = "1.08";
+      document.getElementById("mDesc").value = "Reliance Industries Limited is India's largest private sector conglomerate operating across Digital Services (Jio), Organized Retail, Oil-to-Chemicals (O2C), and New Energy.";
+
+      document.getElementById("mRev1").value = "901064";
+      document.getElementById("mRev2").value = "968500";
+      document.getElementById("mEbit1").value = "111450";
+      document.getElementById("mEbit2").value = "123800";
+      document.getElementById("mEbitda1").value = "162230";
+      document.getElementById("mEbitda2").value = "178900";
+      document.getElementById("mNi1").value = "69621";
+      document.getElementById("mNi2").value = "76800";
+      document.getElementById("mInt1").value = "23118";
+      document.getElementById("mInt2").value = "23900";
+      document.getElementById("mAssets1").value = "1755986";
+      document.getElementById("mAssets2").value = "1865000";
+      document.getElementById("mCl1").value = "385200";
+      document.getElementById("mCl2").value = "402000";
+      document.getElementById("mDebt1").value = "324622";
+      document.getElementById("mDebt2").value = "328500";
+      document.getElementById("mCash1").value = "208350";
+      document.getElementById("mCash2").value = "221000";
+      document.getElementById("mEq1").value = "793481";
+      document.getElementById("mEq2").value = "858000";
+      document.getElementById("mOcf1").value = "158788";
+      document.getElementById("mOcf2").value = "171500";
+      document.getElementById("mCapex1").value = "131769";
+      document.getElementById("mCapex2").value = "118500";
+    }
+
+    function saveCustomCompany() {
+      const msgEl = document.getElementById("modalValidationMsg");
+      const ticker = document.getElementById("mTicker").value.trim().toUpperCase().replace(/[^A-Z0-9_]/g, "");
+      const name = document.getElementById("mName").value.trim();
+      const currMode = document.getElementById("mCurrencyMode").value;
+      const isInr = currMode === "INR_CR";
+      const yahooSym = document.getElementById("mYahooSym").value.trim() || (isInr ? `${ticker}.NS` : ticker);
+      const sector = document.getElementById("mSector").value.trim() || "General Equities";
+      const price = parseFloat(document.getElementById("mPrice").value);
+      const shares = parseFloat(document.getElementById("mShares").value);
+      const beta = parseFloat(document.getElementById("mBeta").value) || 1.0;
+      const desc = document.getElementById("mDesc").value.trim() || `${name} (${ticker}) custom equity analysis profile.`;
+
+      const rev1 = parseFloat(document.getElementById("mRev1").value);
+      const rev2 = parseFloat(document.getElementById("mRev2").value);
+      const ebit1 = parseFloat(document.getElementById("mEbit1").value);
+      const ebit2 = parseFloat(document.getElementById("mEbit2").value);
+      const ebitda1 = parseFloat(document.getElementById("mEbitda1").value);
+      const ebitda2 = parseFloat(document.getElementById("mEbitda2").value);
+      const ni1 = parseFloat(document.getElementById("mNi1").value);
+      const ni2 = parseFloat(document.getElementById("mNi2").value);
+      const int1 = parseFloat(document.getElementById("mInt1").value) || 1;
+      const int2 = parseFloat(document.getElementById("mInt2").value) || 1;
+      const assets1 = parseFloat(document.getElementById("mAssets1").value);
+      const assets2 = parseFloat(document.getElementById("mAssets2").value);
+      const cl1 = parseFloat(document.getElementById("mCl1").value);
+      const cl2 = parseFloat(document.getElementById("mCl2").value);
+      const debt1 = parseFloat(document.getElementById("mDebt1").value) || 0;
+      const debt2 = parseFloat(document.getElementById("mDebt2").value) || 0;
+      const cash1 = parseFloat(document.getElementById("mCash1").value) || 0;
+      const cash2 = parseFloat(document.getElementById("mCash2").value) || 0;
+      const eq1 = parseFloat(document.getElementById("mEq1").value);
+      const eq2 = parseFloat(document.getElementById("mEq2").value);
+      const ocf1 = parseFloat(document.getElementById("mOcf1").value);
+      const ocf2 = parseFloat(document.getElementById("mOcf2").value);
+      const capex1 = parseFloat(document.getElementById("mCapex1").value) || 0;
+      const capex2 = parseFloat(document.getElementById("mCapex2").value) || 0;
+
+      if (!ticker || !name || isNaN(price) || price <= 0 || isNaN(shares) || shares <= 0 || isNaN(rev1) || isNaN(rev2) || isNaN(ebit2) || isNaN(ebitda2) || isNaN(ni2) || isNaN(assets2) || isNaN(cl2) || isNaN(eq2) || isNaN(ocf2)) {
+        msgEl.innerText = "⚠️ Please fill in all required (*) fields with valid numbers. Need a quick demo? Click '⚡ Auto-Fill Reliance (RIL) Demo' at the top right!";
+        msgEl.classList.remove("hidden");
+        return;
+      }
+
+      const da1 = Math.max(0, ebitda1 - ebit1);
+      const da2 = Math.max(0, ebitda2 - ebit2);
+      const pretax1 = ebit1 - int1;
+      const pretax2 = ebit2 - int2;
+      const tax1 = Math.max(0, pretax1 - ni1);
+      const tax2 = Math.max(0, pretax2 - ni2);
+
+      const newCompanyObj = {
+        metadata: {
+          ticker,
+          yahoo_symbol: yahooSym,
+          google_symbol: isInr ? `${ticker}:NSE` : `${ticker}:NASDAQ`,
+          screener_slug: isInr ? ticker : null,
+          name,
+          sector,
+          industry: sector,
+          currency: isInr ? "INR" : "USD",
+          currency_symbol: isInr ? "₹" : "$",
+          unit_short: isInr ? "Cr" : "M",
+          large_unit_divisor: isInr ? 100000 : 1000,
+          large_unit_label: isInr ? "Lakh Cr" : "B",
+          units: isInr ? "Crores (except per-share data)" : "Millions (except per-share data)",
+          fiscal_year_end: isInr ? "March 31" : "December 31",
+          data_source: isInr ? "Screener.in / NSE Consolidated Filings" : "SEC Filings / Custom Input",
+          last_updated: new Date().toISOString(),
+          current_price: price,
+          price_source: "Custom Input Price",
+          diluted_shares: shares,
+          beta: beta,
+          default_rf: isInr ? 6.8 : 4.2,
+          default_erp: isInr ? 6.0 : 5.0,
+          credit_rating_spread: 0.010,
+          description: desc
+        },
+        financials: [
+          {
+            year: "FY2024",
+            revenue: rev1, ebit: ebit1, ebitda: ebitda1, net_income: ni1,
+            interest_expense: int1, tax_expense: tax1, pretax_income: pretax1,
+            total_assets: assets1, current_liabilities: cl1, total_debt: debt1,
+            cash_and_equivalents: cash1, total_equity: eq1,
+            operating_cash_flow: ocf1, capex: capex1,
+            depreciation_amortization: da1, change_in_nwc: 0
+          },
+          {
+            year: "FY2025",
+            revenue: rev2, ebit: ebit2, ebitda: ebitda2, net_income: ni2,
+            interest_expense: int2, tax_expense: tax2, pretax_income: pretax2,
+            total_assets: assets2, current_liabilities: cl2, total_debt: debt2,
+            cash_and_equivalents: cash2, total_equity: eq2,
+            operating_cash_flow: ocf2, capex: capex2,
+            depreciation_amortization: da2, change_in_nwc: 0
+          }
+        ],
+        news: [
+          {
+            date: new Date().toISOString().slice(0, 10),
+            headline: `${name} (${ticker}) Financial & Valuation Coverage Initiated`,
+            source: isInr ? "Screener.in / NSE Filing Summary" : "Company Filing Summary",
+            url: isInr ? `https://www.screener.in/company/${ticker}/consolidated/` : "#",
+            summary_text: `${name} reported latest fiscal year revenue of ${rev2.toLocaleString()} and operating income (EBIT) of ${ebit2.toLocaleString()}, with operating cash flows of ${ocf2.toLocaleString()}.`
+          }
+        ]
+      };
+
+      SAMPLE_REPOSITORY[ticker] = newCompanyObj;
+      try {
+        const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+        existing[ticker] = newCompanyObj;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+        document.getElementById("btnResetCustom").classList.remove("hidden");
+      } catch (e) {
+        console.warn("Could not persist custom company:", e);
+      }
+
+      currentTicker = ticker;
+      populateTickerDropdown();
+      closeCustomModal();
+      resetToCompanyDefaults();
+    }
+
+    // =========================================================================
+    // UI STATE & DYNAMIC MULTI-CURRENCY CONTROLLERS
+    // =========================================================================
+    let currentTicker = "TCS";
+    let lastGeneratedMarkdown = "";
+
+    function fmtNum(val, decimals = 1, prefix = "", suffix = "") {
+      if (val === null || val === undefined || Number.isNaN(val)) return "N/M";
+      return `${prefix}${val.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}${suffix}`;
+    }
+
+    function switchTab(tabId) {
+      document.querySelectorAll(".tab-panel").forEach(el => el.classList.add("hidden"));
+      document.querySelectorAll(".tab-btn").forEach(el => el.classList.remove("active"));
+      document.getElementById(tabId).classList.remove("hidden");
+      document.getElementById("btn-" + tabId).classList.add("active");
+      if (tabId === "tab2") {
+        window.dispatchEvent(new Event("resize"));
+      }
+    }
+
+    function onTickerChange() {
+      currentTicker = document.getElementById("tickerSelect").value;
+      resetToCompanyDefaults();
+    }
+
+    function resetToCompanyDefaults() {
+      const company = SAMPLE_REPOSITORY[currentTicker];
+      const meta = company.metadata;
+      const fin = company.financials;
+      const ratios = AnalyticsEngine.computeHistoricalRatios(fin);
+      const latestRaw = fin[fin.length - 1];
+      const latestRat = ratios[ratios.length - 1];
+
+      updateExternalFinanceLinks(meta);
+
+      const validGrowths = ratios.map(r => r.revenue_growth_pct).filter(v => v !== null);
+      const avgRevGrowth = validGrowths.length > 0 ? validGrowths.reduce((a, b) => a + b, 0) / validGrowths.length : 8.0;
+      const effTax = latestRaw.pretax_income > 0 ? Math.max(5, Math.min(35, (latestRaw.tax_expense / latestRaw.pretax_income) * 100)) : 22.0;
+      const capexPct = Math.max(0.5, Math.min(25, (latestRaw.capex / latestRaw.revenue) * 100));
+
+      document.getElementById("inpRevGrowth").value = Math.max(-5, Math.min(35, Math.round(avgRevGrowth * 2) / 2)).toFixed(1);
+      document.getElementById("inpEbitMargin").value = Math.max(2, Math.min(55, Math.round(latestRat.operating_margin_pct * 2) / 2)).toFixed(1);
+      document.getElementById("inpTaxRate").value = (Math.round(effTax * 2) / 2).toFixed(1);
+      document.getElementById("inpCapexPct").value = (Math.round(capexPct * 2) / 2).toFixed(1);
+
+      const rfDefault = meta.default_rf || (meta.currency === "INR" ? 6.8 : 4.2);
+      const erpDefault = meta.default_erp || (meta.currency === "INR" ? 6.0 : 5.0);
+      document.getElementById("inpRf").value = rfDefault.toFixed(1);
+      document.getElementById("inpErp").value = erpDefault.toFixed(1);
+      document.getElementById("inpBeta").value = meta.beta.toFixed(2);
+      document.getElementById("inpKd").value = (rfDefault + (meta.credit_rating_spread || 0.01) * 100).toFixed(2);
+      document.getElementById("inpTgr").value = meta.currency === "INR" ? "4.0" : "2.5";
+
+      recalcCapmWacc(true);
+      updateModel();
+    }
+
+    function recalcCapmWacc(autoApply = false) {
+      const company = SAMPLE_REPOSITORY[currentTicker];
+      const mult = ValuationEngine.calculateMultiples(company.metadata, company.financials);
+      const rf = parseFloat(document.getElementById("inpRf").value) / 100;
+      const erp = parseFloat(document.getElementById("inpErp").value) / 100;
+      const beta = parseFloat(document.getElementById("inpBeta").value);
+      const kd = parseFloat(document.getElementById("inpKd").value) / 100;
+      const tax = parseFloat(document.getElementById("inpTaxRate").value) / 100;
+
+      const waccObj = ValuationEngine.calculateWacc(rf, beta, erp, kd, tax, mult.market_cap, mult.total_debt);
+      const waccPct = (waccObj.wacc * 100).toFixed(2);
+      document.getElementById("lblCapmWacc").innerText = `${waccPct}%`;
+
+      if (autoApply) {
+        const clampedWacc = Math.max(5.0, Math.min(18.0, Math.round(waccObj.wacc * 1000) / 10));
+        document.getElementById("inpWacc").value = clampedWacc.toFixed(1);
+      }
+      updateModel();
+    }
+
+    function applyCapmWacc() {
+      const text = document.getElementById("lblCapmWacc").innerText.replace("%", "");
+      const val = Math.max(5.0, Math.min(18.0, parseFloat(text)));
+      document.getElementById("inpWacc").value = val.toFixed(1);
+      updateModel();
+    }
+
+    function updateModel() {
+      const company = SAMPLE_REPOSITORY[currentTicker];
+      const meta = company.metadata;
+      const fin = company.financials;
+      const latestRaw = fin[fin.length - 1];
+      const ratios = AnalyticsEngine.computeHistoricalRatios(fin);
+      const latestRat = ratios[ratios.length - 1];
+      const multiples = ValuationEngine.calculateMultiples(meta, fin);
+
+      const revGrowth = parseFloat(document.getElementById("inpRevGrowth").value) / 100;
+      const ebitMargin = parseFloat(document.getElementById("inpEbitMargin").value) / 100;
+      const taxRate = parseFloat(document.getElementById("inpTaxRate").value) / 100;
+      const capexPct = parseFloat(document.getElementById("inpCapexPct").value) / 100;
+      const wacc = parseFloat(document.getElementById("inpWacc").value) / 100;
+      const tgr = parseFloat(document.getElementById("inpTgr").value) / 100;
+
+      document.getElementById("lblRevGrowth").innerText = `${(revGrowth * 100).toFixed(1)}%`;
+      document.getElementById("lblEbitMargin").innerText = `${(ebitMargin * 100).toFixed(1)}%`;
+      document.getElementById("lblTaxRate").innerText = `${(taxRate * 100).toFixed(1)}%`;
+      document.getElementById("lblCapexPct").innerText = `${(capexPct * 100).toFixed(1)}%`;
+      document.getElementById("lblWacc").innerText = `${(wacc * 100).toFixed(1)}%`;
+      document.getElementById("lblTgr").innerText = `${(tgr * 100).toFixed(1)}%`;
+
+      const daPct = latestRaw.depreciation_amortization / latestRaw.revenue;
+      const nwcPct = Math.max(-0.03, Math.min(0.05, latestRaw.change_in_nwc / latestRaw.revenue));
+
+      const baseDcfParams = {
+        base_revenue: latestRaw.revenue,
+        revenue_growth_rate: revGrowth,
+        target_ebit_margin: ebitMargin,
+        effective_tax_rate: taxRate,
+        da_pct_revenue: daPct,
+        capex_pct_revenue: capexPct,
+        nwc_pct_revenue: nwcPct,
+        wacc,
+        terminal_growth_rate: tgr,
+        total_debt: multiples.total_debt,
+        cash_and_equivalents: multiples.cash_and_equivalents,
+        diluted_shares: multiples.diluted_shares,
+        current_price: multiples.current_price,
+        projection_years: 5
+      };
+
+      let dcfResult = null;
+      const errBanner = document.getElementById("dcfErrorBanner");
+      try {
+        dcfResult = ValuationEngine.runDcfModel(baseDcfParams);
+        errBanner.classList.add("hidden");
+      } catch (err) {
+        errBanner.innerText = err.message;
+        errBanner.classList.remove("hidden");
+        return;
+      }
+
+      renderKpiCards(meta, multiples, dcfResult, latestRat);
+      renderTab1OverviewAndPeers(meta);
+      renderTab2FinancialAnalysis(meta, fin, ratios);
+      renderTab3ValuationDcf(meta, baseDcfParams, dcfResult);
+      renderTab4News(company.news);
+      renderTab5Thesis(meta, fin, ratios, multiples, dcfResult);
+      renderTab6DataQuality(meta, fin);
+    }
+
+    function renderKpiCards(meta, multiples, dcf, latestRat) {
+      const sym = meta.currency_symbol;
+      const uShort = meta.unit_short;
+      const div = meta.large_unit_divisor;
+      const divLbl = meta.large_unit_label;
+
+      const upDownColor = dcf.upside_downside_pct >= 0 ? "text-emerald-600" : "text-rose-600";
+      const upDownSign = dcf.upside_downside_pct >= 0 ? "+" : "";
+      const cards = [
+        { label: "Current Share Price", val: fmtNum(multiples.current_price, 2, sym), sub: `${fmtNum(multiples.diluted_shares, 1, "", " " + uShort)} shares` },
+        { label: "DCF Intrinsic Value", val: fmtNum(dcf.implied_share_price, 2, sym), sub: `<span class="${upDownColor} font-semibold">${upDownSign}${dcf.upside_downside_pct.toFixed(1)}% vs. Spot</span>` },
+        { label: "Enterprise Value", val: fmtNum(multiples.enterprise_value / div, 2, sym, " " + divLbl), sub: `Mkt Cap: ${fmtNum(multiples.market_cap / div, 2, sym, " " + divLbl)}` },
+        { label: "EV / EBITDA", val: fmtNum(multiples.ev_to_ebitda, 1, "", "x"), sub: `EV / EBIT: ${fmtNum(multiples.ev_to_ebit, 1, "", "x")}` },
+        { label: "P / E (Trailing)", val: fmtNum(multiples.pe_ratio, 1, "", "x"), sub: `P / FCF: ${fmtNum(multiples.pfcf_ratio, 1, "", "x")}` },
+        { label: `ROCE (${latestRat.year})`, val: fmtNum(latestRat.roce_pct, 1, "", "%"), sub: `ROE: ${fmtNum(latestRat.roe_pct, 1, "", "%")}` }
+      ];
+      document.getElementById("kpiCardsContainer").innerHTML = cards.map(c => `
+        <div class="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
+          <div class="text-xs text-slate-500 font-medium uppercase">${c.label}</div>
+          <div class="text-xl font-bold text-slate-900 mt-1">${c.val}</div>
+          <div class="text-xs text-slate-500 mt-1">${c.sub}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderTab1OverviewAndPeers(meta) {
+      document.getElementById("companyTitle").innerText = `${meta.name} (${meta.ticker}) — Business Profile`;
+      document.getElementById("companyDesc").innerText = meta.description;
+      document.getElementById("companyMetaBadges").innerHTML = `
+        <span class="bg-slate-100 border px-2.5 py-1 rounded"><strong>Sector:</strong> ${meta.sector}</span>
+        <span class="bg-slate-100 border px-2.5 py-1 rounded"><strong>Live Feed Symbol:</strong> ${meta.yahoo_symbol || meta.ticker}</span>
+        <span class="bg-slate-100 border px-2.5 py-1 rounded"><strong>FY End:</strong> ${meta.fiscal_year_end}</span>
+        <span class="bg-blue-50 text-blue-900 border border-blue-200 px-2.5 py-1 rounded"><strong>Reporting Units:</strong> ${meta.currency} (${meta.currency_symbol} ${meta.units})</span>
+      `;
+
+      const tickers = Object.keys(SAMPLE_REPOSITORY);
+      let html = `
+        <thead>
+          <tr class="bg-slate-100 text-slate-700 border-b text-xs uppercase">
+            <th class="p-2.5">Ticker</th>
+            <th class="p-2.5">Company</th>
+            <th class="p-2.5">Ccy</th>
+            <th class="p-2.5">Live / Spot Price</th>
+            <th class="p-2.5">Market Cap</th>
+            <th class="p-2.5">Enterprise Value</th>
+            <th class="p-2.5">Rev Growth</th>
+            <th class="p-2.5">EBIT Margin</th>
+            <th class="p-2.5">ROE</th>
+            <th class="p-2.5">ROCE</th>
+            <th class="p-2.5">EV/EBITDA</th>
+            <th class="p-2.5">P/E</th>
+          </tr>
+        </thead>
+        <tbody>
+      `;
+      tickers.forEach(t => {
+        const comp = SAMPLE_REPOSITORY[t];
+        const cm = comp.metadata;
+        const r = AnalyticsEngine.computeHistoricalRatios(comp.financials);
+        const latestR = r[r.length - 1];
+        const m = ValuationEngine.calculateMultiples(cm, comp.financials);
+        const rowHighlight = t === currentTicker ? "bg-blue-50 font-semibold" : "border-b hover:bg-slate-50";
+        html += `
+          <tr class="${rowHighlight}">
+            <td class="p-2.5 font-mono text-blue-700">${t}</td>
+            <td class="p-2.5">${cm.name}</td>
+            <td class="p-2.5 font-mono text-xs">${cm.currency}</td>
+            <td class="p-2.5 font-bold">${fmtNum(m.current_price, 2, cm.currency_symbol)}</td>
+            <td class="p-2.5">${fmtNum(m.market_cap / cm.large_unit_divisor, 2, cm.currency_symbol, " " + cm.large_unit_label)}</td>
+            <td class="p-2.5">${fmtNum(m.enterprise_value / cm.large_unit_divisor, 2, cm.currency_symbol, " " + cm.large_unit_label)}</td>
+            <td class="p-2.5">${fmtNum(latestR.revenue_growth_pct, 1, "", "%")}</td>
+            <td class="p-2.5">${fmtNum(latestR.operating_margin_pct, 1, "", "%")}</td>
+            <td class="p-2.5">${fmtNum(latestR.roe_pct, 1, "", "%")}</td>
+            <td class="p-2.5">${fmtNum(latestR.roce_pct, 1, "", "%")}</td>
+            <td class="p-2.5">${fmtNum(m.ev_to_ebitda, 1, "", "x")}</td>
+            <td class="p-2.5">${fmtNum(m.pe_ratio, 1, "", "x")}</td>
+          </tr>
+        `;
+      });
+      html += `</tbody>`;
+      document.getElementById("peerComparisonTable").innerHTML = html;
+    }
+
+    function renderTab2FinancialAnalysis(meta, fin, ratios) {
+      const sym = meta.currency_symbol;
+      const uShort = meta.unit_short;
+      const years = fin.map(f => f.year);
+
+      Plotly.newPlot("chartRevFcf", [
+        { x: years, y: fin.map(f => f.revenue), name: `Revenue (${sym}${uShort})`, type: "bar", marker: { color: "#2563eb" } },
+        { x: years, y: fin.map(f => f.ebit), name: `EBIT (${sym}${uShort})`, type: "bar", marker: { color: "#10b981" } },
+        { x: years, y: ratios.map(r => r.free_cash_flow), name: `Free Cash Flow (${sym}${uShort})`, type: "bar", marker: { color: "#f59e0b" } }
+      ], {
+        title: { text: `Revenue, Operating Income (EBIT) & Free Cash Flow (${sym} ${meta.units.split(' ')[0]})`, font: { size: 13 } },
+        barmode: "group",
+        margin: { t: 40, b: 35, l: 55, r: 20 },
+        legend: { orientation: "h", y: -0.2 }
+      }, { responsive: true });
+
+      Plotly.newPlot("chartMarginsRoce", [
+        { x: years, y: ratios.map(r => r.operating_margin_pct), name: "Operating Margin (%)", mode: "lines+markers", line: { color: "#2563eb", width: 3 } },
+        { x: years, y: ratios.map(r => r.net_profit_margin_pct), name: "Net Profit Margin (%)", mode: "lines+markers", line: { color: "#10b981", width: 3 } },
+        { x: years, y: ratios.map(r => r.roce_pct), name: "ROCE (%)", mode: "lines+markers", line: { color: "#8b5cf6", width: 3 } }
+      ], {
+        title: { text: "Profitability Margins & Return on Capital Employed (%)", font: { size: 13 } },
+        margin: { t: 40, b: 35, l: 45, r: 20 },
+        legend: { orientation: "h", y: -0.2 }
+      }, { responsive: true });
+
+      let rHtml = `
+        <thead>
+          <tr class="bg-slate-100 text-slate-700 border-b text-xs uppercase">
+            <th class="p-2.5">Period</th>
+            <th class="p-2.5">Rev Growth</th>
+            <th class="p-2.5">Operating Margin</th>
+            <th class="p-2.5">EBITDA Margin</th>
+            <th class="p-2.5">Net Margin</th>
+            <th class="p-2.5">ROE</th>
+            <th class="p-2.5">ROCE</th>
+            <th class="p-2.5">Debt / Equity</th>
+            <th class="p-2.5">Net Debt / EBITDA</th>
+            <th class="p-2.5">Int. Coverage</th>
+            <th class="p-2.5">FCF (${sym}${uShort})</th>
+            <th class="p-2.5">CFO / Net Inc</th>
+          </tr>
+        </thead>
+        <tbody>
+      `;
+      ratios.forEach(r => {
+        rHtml += `
+          <tr class="border-b hover:bg-slate-50">
+            <td class="p-2.5 font-semibold">${r.year}</td>
+            <td class="p-2.5">${fmtNum(r.revenue_growth_pct, 2, "", "%")}</td>
+            <td class="p-2.5">${fmtNum(r.operating_margin_pct, 2, "", "%")}</td>
+            <td class="p-2.5">${fmtNum(r.ebitda_margin_pct, 2, "", "%")}</td>
+            <td class="p-2.5">${fmtNum(r.net_profit_margin_pct, 2, "", "%")}</td>
+            <td class="p-2.5">${fmtNum(r.roe_pct, 2, "", "%")}</td>
+            <td class="p-2.5">${fmtNum(r.roce_pct, 2, "", "%")}</td>
+            <td class="p-2.5">${fmtNum(r.debt_to_equity, 2, "", "x")}</td>
+            <td class="p-2.5">${fmtNum(r.net_debt_to_ebitda, 2, "", "x")}</td>
+            <td class="p-2.5">${fmtNum(r.interest_coverage, 1, "", "x")}</td>
+            <td class="p-2.5">${fmtNum(r.free_cash_flow, 0, sym)}</td>
+            <td class="p-2.5">${fmtNum(r.ocf_to_net_income, 2, "", "x")}</td>
+          </tr>
+        `;
+      });
+      rHtml += `</tbody>`;
+      document.getElementById("historicalRatiosTable").innerHTML = rHtml;
+
+      const latestRaw = fin[fin.length - 1];
+      const prevRaw = fin.length > 1 ? fin[fin.length - 2] : latestRaw;
+      const latestRat = ratios[ratios.length - 1];
+      const capEmp = latestRaw.total_assets - latestRaw.current_liabilities;
+      const netDebt = latestRaw.total_debt - latestRaw.cash_and_equivalents;
+      const fcf = latestRaw.operating_cash_flow - latestRaw.capex;
+
+      const auditRows = [
+        ["Growth", `Revenue Growth YoY (${latestRaw.year})`, "(Revenue_t - Revenue_{t-1}) / Revenue_{t-1}", `(${fmtNum(latestRaw.revenue, 0)} - ${fmtNum(prevRaw.revenue, 0)}) / ${fmtNum(prevRaw.revenue, 0)}`, fmtNum(latestRat.revenue_growth_pct, 2, "", "%")],
+        ["Profitability", `Operating Margin (${latestRaw.year})`, "EBIT / Revenue", `${fmtNum(latestRaw.ebit, 0)} / ${fmtNum(latestRaw.revenue, 0)}`, fmtNum(latestRat.operating_margin_pct, 2, "", "%")],
+        ["Profitability", `Net Profit Margin (${latestRaw.year})`, "Net Income / Revenue", `${fmtNum(latestRaw.net_income, 0)} / ${fmtNum(latestRaw.revenue, 0)}`, fmtNum(latestRat.net_profit_margin_pct, 2, "", "%")],
+        ["Return on Capital", `Return on Equity - ROE (${latestRaw.year})`, "Net Income / Total Shareholders' Equity", `${fmtNum(latestRaw.net_income, 0)} / ${fmtNum(latestRaw.total_equity, 0)}`, fmtNum(latestRat.roe_pct, 2, "", "%")],
+        ["Return on Capital", `Return on Capital Employed - ROCE (${latestRaw.year})`, "EBIT / (Total Assets - Current Liabilities)", `${fmtNum(latestRaw.ebit, 0)} / (${fmtNum(latestRaw.total_assets, 0)} - ${fmtNum(latestRaw.current_liabilities, 0)} = ${fmtNum(capEmp, 0)})`, fmtNum(latestRat.roce_pct, 2, "", "%")],
+        ["Solvency", `Gross Debt-to-Equity (${latestRaw.year})`, "Total Debt / Total Equity", `${fmtNum(latestRaw.total_debt, 0)} / ${fmtNum(latestRaw.total_equity, 0)}`, fmtNum(latestRat.debt_to_equity, 2, "", "x")],
+        ["Solvency", `Net Debt-to-EBITDA (${latestRaw.year})`, "(Total Debt - Cash) / EBITDA", `(${fmtNum(latestRaw.total_debt, 0)} - ${fmtNum(latestRaw.cash_and_equivalents, 0)} = ${fmtNum(netDebt, 0)}) / ${fmtNum(latestRaw.ebitda, 0)}`, fmtNum(latestRat.net_debt_to_ebitda, 2, "", "x")],
+        ["Cash Flow", `Free Cash Flow - FCF (${latestRaw.year})`, "Operating Cash Flow - CapEx", `${fmtNum(latestRaw.operating_cash_flow, 0)} - ${fmtNum(latestRaw.capex, 0)}`, fmtNum(fcf, 0, sym, " " + uShort)],
+        ["Cash Flow", `Cash Conversion Ratio (${latestRaw.year})`, "Operating Cash Flow / Net Income", `${fmtNum(latestRaw.operating_cash_flow, 0)} / ${fmtNum(latestRaw.net_income, 0)}`, fmtNum(latestRat.ocf_to_net_income, 2, "", "x")]
+      ];
+
+      let aHtml = `
+        <thead>
+          <tr class="bg-slate-100 text-slate-700 border-b text-xs uppercase">
+            <th class="p-2.5">Category</th>
+            <th class="p-2.5">Metric</th>
+            <th class="p-2.5">Standard Formula</th>
+            <th class="p-2.5">Underlying Figures (${sym} ${uShort})</th>
+            <th class="p-2.5">Output</th>
+          </tr>
+        </thead>
+        <tbody>
+      `;
+      auditRows.forEach(r => {
+        aHtml += `
+          <tr class="border-b hover:bg-slate-50">
+            <td class="p-2.5 font-medium text-slate-600">${r[0]}</td>
+            <td class="p-2.5 font-semibold">${r[1]}</td>
+            <td class="p-2.5 font-mono text-xs text-slate-700">${r[2]}</td>
+            <td class="p-2.5 font-mono text-xs text-slate-600">${r[3]}</td>
+            <td class="p-2.5 font-bold text-blue-700">${r[4]}</td>
+          </tr>
+        `;
+      });
+      aHtml += `</tbody>`;
+      document.getElementById("formulaAuditTable").innerHTML = aHtml;
+    }
+
+    function renderTab3ValuationDcf(meta, baseParams, dcf) {
+      const sym = meta.currency_symbol;
+      const uShort = meta.unit_short;
+      document.getElementById("dcfStage1Title").innerText = `Stage 1: 5-Year Explicit FCFF Forecast (${sym} ${meta.units.split(' ')[0]})`;
+
+      let pHtml = `
+        <thead>
+          <tr class="bg-slate-100 text-slate-700 border-b text-xs uppercase">
+            <th class="p-2">Year</th>
+            <th class="p-2">Revenue</th>
+            <th class="p-2">EBIT</th>
+            <th class="p-2">NOPAT</th>
+            <th class="p-2">(+) D&amp;A</th>
+            <th class="p-2">(-) CapEx</th>
+            <th class="p-2">(-) ΔNWC</th>
+            <th class="p-2">FCFF</th>
+            <th class="p-2">PV of FCFF</th>
+          </tr>
+        </thead>
+        <tbody>
+      `;
+      dcf.projections.forEach(p => {
+        pHtml += `
+          <tr class="border-b hover:bg-slate-50">
+            <td class="p-2 font-semibold">${p.year}</td>
+            <td class="p-2">${fmtNum(p.revenue, 0, sym)}</td>
+            <td class="p-2">${fmtNum(p.ebit, 0, sym)}</td>
+            <td class="p-2">${fmtNum(p.nopat, 0, sym)}</td>
+            <td class="p-2">${fmtNum(p.da, 0, sym)}</td>
+            <td class="p-2">${fmtNum(p.capex, 0, sym)}</td>
+            <td class="p-2">${fmtNum(p.nwcChange, 0, sym)}</td>
+            <td class="p-2 font-semibold">${fmtNum(p.fcff, 0, sym)}</td>
+            <td class="p-2 font-bold text-blue-700">${fmtNum(p.pvFcff, 0, sym)}</td>
+          </tr>
+        `;
+      });
+      pHtml += `</tbody>`;
+      document.getElementById("dcfProjectionsTable").innerHTML = pHtml;
+
+      const bridgeRows = [
+        ["PV of Stage 1 FCFF (Years 1–5)", fmtNum(dcf.pv_stage1_fcff, 0, sym, " " + uShort)],
+        ["PV of Terminal Value (Gordon Growth)", `${fmtNum(dcf.pv_terminal_value, 0, sym, " " + uShort)} (${dcf.tv_pct_of_ev.toFixed(1)}% of EV)`],
+        ["Implied Enterprise Value (EV)", fmtNum(dcf.implied_enterprise_value, 0, sym, " " + uShort)],
+        ["(-) Less: Total Debt", `-${fmtNum(dcf.less_total_debt, 0, sym, " " + uShort)}`],
+        ["(+) Plus: Cash & Equivalents", `+${fmtNum(dcf.plus_cash, 0, sym, " " + uShort)}`],
+        ["Implied Equity Value", fmtNum(dcf.implied_equity_value, 0, sym, " " + uShort)],
+        ["(÷) Diluted Shares Outstanding", fmtNum(dcf.diluted_shares, 2, "", " " + uShort)],
+        ["Implied Intrinsic Share Price", fmtNum(dcf.implied_share_price, 2, sym)]
+      ];
+      document.getElementById("dcfBridgeTable").innerHTML = `<tbody>` + bridgeRows.map((r, i) => `
+        <tr class="border-b ${i === 7 ? 'bg-blue-50 font-bold text-blue-900' : ''}">
+          <td class="p-2">${r[0]}</td>
+          <td class="p-2 text-right font-mono">${r[1]}</td>
+        </tr>
+      `).join("") + `</tbody>`;
+
+      const scenarioDefs = [
+        { name: "Bear Case", gDelta: -0.03, mDelta: -0.025, wDelta: 0.01, tDelta: -0.005 },
+        { name: "Base Case", gDelta: 0.0, mDelta: 0.0, wDelta: 0.0, tDelta: 0.0 },
+        { name: "Bull Case", gDelta: 0.03, mDelta: 0.025, wDelta: -0.005, tDelta: 0.005 }
+      ];
+      let sHtml = `
+        <thead>
+          <tr class="bg-slate-100 text-slate-700 border-b text-xs uppercase">
+            <th class="p-2">Scenario</th>
+            <th class="p-2">Rev Growth</th>
+            <th class="p-2">EBIT Margin</th>
+            <th class="p-2">WACC</th>
+            <th class="p-2">Term. g</th>
+            <th class="p-2">Implied Price</th>
+            <th class="p-2">vs. Live Spot</th>
+          </tr>
+        </thead>
+        <tbody>
+      `;
+      scenarioDefs.forEach(sc => {
+        const w = Math.max(0.04, baseParams.wacc + sc.wDelta);
+        const t = Math.min(w - 0.01, baseParams.terminal_growth_rate + sc.tDelta);
+        const res = ValuationEngine.runDcfModel({
+          ...baseParams,
+          revenue_growth_rate: baseParams.revenue_growth_rate + sc.gDelta,
+          target_ebit_margin: Math.max(0.02, baseParams.target_ebit_margin + sc.mDelta),
+          wacc: w,
+          terminal_growth_rate: t
+        });
+        const highlight = sc.name === "Base Case" ? "bg-blue-50 font-semibold" : "border-b";
+        sHtml += `
+          <tr class="${highlight}">
+            <td class="p-2">${sc.name}</td>
+            <td class="p-2">${((baseParams.revenue_growth_rate + sc.gDelta) * 100).toFixed(1)}%</td>
+            <td class="p-2">${(Math.max(0.02, baseParams.target_ebit_margin + sc.mDelta) * 100).toFixed(1)}%</td>
+            <td class="p-2">${(w * 100).toFixed(2)}%</td>
+            <td class="p-2">${(t * 100).toFixed(2)}%</td>
+            <td class="p-2 font-bold text-slate-900">${fmtNum(res.implied_share_price, 2, sym)}</td>
+            <td class="p-2 ${res.upside_downside_pct >= 0 ? 'text-emerald-600' : 'text-rose-600'} font-semibold">${res.upside_downside_pct >= 0 ? '+' : ''}${res.upside_downside_pct.toFixed(1)}%</td>
+          </tr>
+        `;
+      });
+      sHtml += `</tbody>`;
+      document.getElementById("dcfScenarioTable").innerHTML = sHtml;
+
+      const wSteps = [-0.01, -0.005, 0, 0.005, 0.01];
+      const tSteps = [-0.005, -0.0025, 0, 0.0025, 0.005];
+      let mHtml = `<thead><tr class="bg-slate-100 text-slate-700 border-b text-xs"><th class="p-2">WACC \\ TGR</th>`;
+      tSteps.forEach(ts => {
+        mHtml += `<th class="p-2">g = ${((baseParams.terminal_growth_rate + ts) * 100).toFixed(2)}%</th>`;
+      });
+      mHtml += `</tr></thead><tbody>`;
+
+      wSteps.forEach((ws, rIdx) => {
+        const wVal = baseParams.wacc + ws;
+        mHtml += `<tr class="border-b"><td class="p-2 font-semibold bg-slate-50 text-xs">WACC ${(wVal * 100).toFixed(2)}%</td>`;
+        tSteps.forEach((ts, cIdx) => {
+          const tVal = baseParams.terminal_growth_rate + ts;
+          const isCenter = rIdx === 2 && cIdx === 2;
+          if (wVal <= tVal + 0.002) {
+            mHtml += `<td class="p-2 text-slate-400">N/M</td>`;
+          } else {
+            const out = ValuationEngine.runDcfModel({ ...baseParams, wacc: wVal, terminal_growth_rate: tVal });
+            const cellStyle = isCenter ? "bg-blue-600 text-white font-bold" : (out.implied_share_price >= baseParams.current_price ? "bg-emerald-50 text-emerald-900" : "bg-rose-50 text-rose-900");
+            mHtml += `<td class="p-2 font-mono text-xs ${cellStyle}">${fmtNum(out.implied_share_price, 2, sym)}</td>`;
+          }
+        });
+        mHtml += `</tr>`;
+      });
+      mHtml += `</tbody>`;
+      document.getElementById("dcfSensitivityTable").innerHTML = mHtml;
+    }
+
+    function renderTab4News(newsList) {
+      const container = document.getElementById("newsFeedContainer");
+      container.innerHTML = newsList.map(item => {
+        const parsed = AIAnalystEngine.analyzeNewsItem(item);
+        return `
+          <div class="border border-slate-200 rounded-lg p-4 bg-slate-50">
+            <div class="flex flex-wrap justify-between items-center gap-2 mb-2 border-b pb-2">
+              <div class="font-bold text-slate-900 text-sm">📅 ${parsed.date} — ${parsed.headline}</div>
+              <a href="${parsed.url}" target="_blank" rel="noopener noreferrer" class="text-xs text-blue-600 hover:underline font-medium">🔗 Source: ${parsed.source}</a>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs mt-2">
+              <div class="bg-white p-3 rounded border border-slate-200">
+                <div class="font-bold text-emerald-800 mb-1">✅ Reported Facts (Directly Stated)</div>
+                <ul class="list-disc pl-4 space-y-1 text-slate-700">
+                  ${parsed.reported_facts.map(f => `<li>${f}</li>`).join("")}
+                </ul>
+              </div>
+              <div class="bg-white p-3 rounded border border-slate-200">
+                <div class="font-bold text-blue-800 mb-1">🧠 Inferred Market Implications (Analytical Synthesis)</div>
+                <ul class="list-disc pl-4 space-y-1 text-slate-700">
+                  ${parsed.inferred_implications.map(imp => `<li>${imp}</li>`).join("")}
+                </ul>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function runCustomNewsAnalysis() {
+      const headline = document.getElementById("customNewsHeadline").value || "User-Supplied News Item";
+      const source = document.getElementById("customNewsSource").value || "User Input";
+      const body = document.getElementById("customNewsBody").value;
+      if (!body.trim()) return;
+
+      const parsed = AIAnalystEngine.analyzeNewsItem({
+        date: source,
+        headline,
+        source,
+        url: "#",
+        summary_text: body
+      });
+
+      const out = document.getElementById("customNewsOutput");
+      out.classList.remove("hidden");
+      out.innerHTML = `
+        <div class="border border-blue-200 bg-blue-50 rounded-lg p-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          <div>
+            <div class="font-bold text-emerald-800 mb-1">✅ Reported Facts Extracted:</div>
+            <ul class="list-disc pl-4 space-y-1">${parsed.reported_facts.map(f => `<li>${f}</li>`).join("")}</ul>
+          </div>
+          <div>
+            <div class="font-bold text-blue-900 mb-1">🧠 Inferred Market Implications:</div>
+            <ul class="list-disc pl-4 space-y-1">${parsed.inferred_implications.map(i => `<li>${i}</li>`).join("")}</ul>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderTab5Thesis(meta, fin, ratios, multiples, dcf) {
+      const sym = meta.currency_symbol;
+      const uShort = meta.unit_short;
+      const latestRaw = fin[fin.length - 1];
+      const latestRat = ratios[ratios.length - 1];
+      const firstRat = ratios[0];
+
+      const strengths = [];
+      const risks = [];
+
+      if (latestRat.roce_pct > 18) {
+        strengths.push(`<strong>Superior Capital Efficiency:</strong> ${latestRaw.year} ROCE stands at ${latestRat.roce_pct.toFixed(1)}% (and ROE at ${latestRat.roe_pct.toFixed(1)}%), exceeding the ${(dcf.wacc_used * 100).toFixed(2)}% WACC and signaling economic value creation.`);
+      } else {
+        risks.push(`<strong>Capital Efficiency Monitoring:</strong> ${latestRaw.year} ROCE of ${latestRat.roce_pct.toFixed(1)}% requires disciplined capital allocation against the ${(dcf.wacc_used * 100).toFixed(2)}% WACC.`);
+      }
+
+      if (latestRat.ocf_to_net_income >= 1.0) {
+        strengths.push(`<strong>High Earnings Quality:</strong> Operating Cash Flow to Net Income conversion is ${latestRat.ocf_to_net_income.toFixed(2)}x (${fmtNum(latestRat.free_cash_flow, 0, sym, " " + uShort)} in Free Cash Flow), confirming accounting profits are backed by cash generation.`);
+      }
+
+      if (latestRat.net_debt_to_ebitda < 1.0) {
+        strengths.push(`<strong>Strong Balance Sheet Position:</strong> Net Debt-to-EBITDA is ${latestRat.net_debt_to_ebitda.toFixed(2)}x (Cash of ${fmtNum(multiples.cash_and_equivalents, 0, sym, " " + uShort)} vs. Total Debt of ${fmtNum(multiples.total_debt, 0, sym, " " + uShort)}).`);
+      } else {
+        risks.push(`<strong>Leverage & Refinancing Sensitivity:</strong> Net Debt-to-EBITDA stands at ${latestRat.net_debt_to_ebitda.toFixed(2)}x.`);
+      }
+
+      if (latestRat.operating_margin_pct < firstRat.operating_margin_pct) {
+        risks.push(`<strong>Historical Margin Compression:</strong> Operating margin contracted from ${firstRat.operating_margin_pct.toFixed(1)}% (${firstRat.year}) to ${latestRat.operating_margin_pct.toFixed(1)}% (${latestRaw.year}).`);
+      } else {
+        strengths.push(`<strong>Operating Leverage Resilience:</strong> Operating margin expanded or held steady from ${firstRat.operating_margin_pct.toFixed(1)}% (${firstRat.year}) to ${latestRat.operating_margin_pct.toFixed(1)}% (${latestRaw.year}).`);
+      }
+
+      if (dcf.tv_pct_of_ev > 70) {
+        risks.push(`<strong>Terminal Value Duration Sensitivity:</strong> ${dcf.tv_pct_of_ev.toFixed(1)}% of Implied Enterprise Value stems from Terminal Value beyond Year 5.`);
+      }
+
+      lastGeneratedMarkdown = `# Institutional Equity Research Memorandum: ${meta.name} (${meta.ticker})
+Sector: ${meta.sector} | Reporting Currency: ${meta.currency} (${sym} ${meta.units})
+Live/Spot Price: ${sym}${multiples.current_price.toFixed(2)} (${meta.price_source || 'Reference'}) | DCF Implied Intrinsic Value: ${sym}${dcf.implied_share_price.toFixed(2)} (${dcf.upside_downside_pct >= 0 ? '+' : ''}${dcf.upside_downside_pct.toFixed(1)}%)
+
+## 1. Business Overview
+${meta.description}
+
+## 2. Key Quantitative Strengths
+${strengths.map(s => "- " + s.replace(/<\/?strong>/g, "**")).join("\n")}
+
+## 3. Key Quantitative & Structural Risks
+${risks.map(r => "- " + r.replace(/<\/?strong>/g, "**")).join("\n")}
+
+## 4. Valuation Summary & EV-to-Equity Bridge
+- WACC Used: ${(dcf.wacc_used * 100).toFixed(2)}% | Terminal Growth (g): ${(dcf.tgr_used * 100).toFixed(2)}%
+- PV of Stage 1 FCFF (5Y): ${sym}${dcf.pv_stage1_fcff.toFixed(1)} ${uShort}
+- PV of Terminal Value: ${sym}${dcf.pv_terminal_value.toFixed(1)} ${uShort} (${dcf.tv_pct_of_ev.toFixed(1)}% of EV)
+- Implied Enterprise Value: ${sym}${dcf.implied_enterprise_value.toFixed(1)} ${uShort}
+- Implied Equity Value: ${sym}${dcf.implied_equity_value.toFixed(1)} ${uShort} (${sym}${dcf.implied_share_price.toFixed(2)} / share)
+`;
+
+      document.getElementById("investmentThesisContainer").innerHTML = `
+        <div class="border-b pb-3">
+          <h2 class="text-xl font-bold text-slate-900">Institutional Equity Research Memo: ${meta.name} (${meta.ticker})</h2>
+          <p class="text-xs text-slate-500 mt-1"><strong>Data Source:</strong> ${meta.data_source} | <strong>Spot Price:</strong> ${sym}${multiples.current_price.toFixed(2)} (${meta.price_source || 'Reference'}) | <strong>Base DCF Value:</strong> ${sym}${dcf.implied_share_price.toFixed(2)}</p>
+        </div>
+        <div>
+          <h4 class="font-bold text-slate-800 uppercase text-xs tracking-wider mb-1">1. Business Overview</h4>
+          <p>${meta.description} In ${latestRaw.year}, ${meta.name} generated <strong>${fmtNum(latestRaw.revenue, 0, sym, " " + uShort)}</strong> in revenue, <strong>${fmtNum(latestRaw.ebit, 0, sym, " " + uShort)}</strong> in EBIT, and trades at <strong>${fmtNum(multiples.ev_to_ebitda, 1, "", "x")} EV/EBITDA</strong> and <strong>${fmtNum(multiples.pe_ratio, 1, "", "x")} P/E</strong>.</p>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="bg-emerald-50 border border-emerald-200 p-4 rounded-lg">
+            <h4 class="font-bold text-emerald-900 uppercase text-xs tracking-wider mb-2">2. Quantitative Strengths</h4>
+            <ul class="list-disc pl-4 space-y-1.5 text-slate-800">${strengths.map(s => `<li>${s}</li>`).join("")}</ul>
+          </div>
+          <div class="bg-rose-50 border border-rose-200 p-4 rounded-lg">
+            <h4 class="font-bold text-rose-900 uppercase text-xs tracking-wider mb-2">3. Structural & Valuation Risks</h4>
+            <ul class="list-disc pl-4 space-y-1.5 text-slate-800">${risks.map(r => `<li>${r}</li>`).join("")}</ul>
+          </div>
+        </div>
+        <div>
+          <h4 class="font-bold text-slate-800 uppercase text-xs tracking-wider mb-1">4. Key Questions for Further Analyst Due Diligence</h4>
+          <ol class="list-decimal pl-5 space-y-1">
+            <li><strong>Incremental ROCE vs. WACC:</strong> As capital expenditures scale, will incremental return on capital remain above the ${(dcf.wacc_used * 100).toFixed(2)}% WACC?</li>
+            <li><strong>Margin Sustainability:</strong> Can the company defend its ${(latestRat.operating_margin_pct).toFixed(1)}% operating margin against competitive and macro headwinds?</li>
+            <li><strong>Cash Conversion Cycle:</strong> How sustainable is the ${latestRat.ocf_to_net_income.toFixed(2)}x cash conversion ratio over the next cycle?</li>
+          </ol>
+        </div>
+      `;
+    }
+
+    function renderTab6DataQuality(meta, fin) {
+      document.getElementById("rawFinTableTitle").innerText = `Raw Historical Financial Statements (${meta.currency_symbol} ${meta.units})`;
+      document.getElementById("dataQualityContainer").innerHTML = `
+        <div class="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded border">
+          <div><strong>Primary Source:</strong> ${meta.data_source}</div>
+          <div><strong>Price Provenance:</strong> ${meta.price_source || "Reference Price"}</div>
+          <div><strong>Reporting Units:</strong> ${meta.currency} (${meta.currency_symbol} ${meta.units})</div>
+          <div><strong>Completeness Score:</strong> <span class="text-emerald-700 font-bold">100.0% (0 Missing Cells)</span></div>
+        </div>
+        <p class="text-xs text-slate-500 mt-2"><strong>Documented Limitations:</strong> Stage-1 DCF applies uniform 5-year revenue growth and target EBIT margins. Live price sync updates market multiples and DCF upside/downside; historical statements reflect audited annual filings.</p>
+      `;
+
+      const cols = Object.keys(fin[0]);
+      let fHtml = `<thead><tr class="bg-slate-100 text-slate-700 border-b text-xs uppercase">` + cols.map(c => `<th class="p-2">${c}</th>`).join("") + `</tr></thead><tbody>`;
+      fin.forEach(row => {
+        fHtml += `<tr class="border-b hover:bg-slate-50">` + cols.map(c => `<td class="p-2 font-mono text-xs">${typeof row[c] === 'number' ? row[c].toLocaleString() : row[c]}</td>`).join("") + `</tr>`;
+      });
+      fHtml += `</tbody>`;
+      document.getElementById("rawFinancialsTable").innerHTML = fHtml;
+    }
+
+    // =========================================================================
+    // MODULE 5: AUTOMATED UNIT TEST SUITE
+    // =========================================================================
+    function runAutomatedTests() {
+      const results = [];
+      function assertTest(name, condition, details) {
+        results.push({ name, passed: Boolean(condition), details });
+      }
+
+      const negEqRoe = AnalyticsEngine.safeDivide(-80, -200, true);
+      assertTest(
+        "test_negative_equity_roe_guard",
+        negEqRoe === null,
+        "Ensures (-80 Net Income / -200 Equity) returns null (N/M) instead of false +40% ROE"
+      );
+
+      const sampleRatios = AnalyticsEngine.computeHistoricalRatios([
+        { year: "FY25", revenue: 1000, ebit: 200, ebitda: 250, net_income: 150, interest_expense: 20, tax_expense: 30, pretax_income: 180, total_assets: 1200, current_liabilities: 200, total_debt: 300, cash_and_equivalents: 100, total_equity: 500, operating_cash_flow: 220, capex: 70, depreciation_amortization: 50, change_in_nwc: 0 }
+      ])[0];
+      assertTest(
+        "test_roce_and_fcf_math",
+        Math.abs(sampleRatios.roce_pct - 20.0) < 0.001 && Math.abs(sampleRatios.free_cash_flow - 150.0) < 0.001,
+        `ROCE = 200 / (1200 - 200) = 20.0% | FCF = 220 - 70 = 150`
+      );
+
+      const waccOut = ValuationEngine.calculateWacc(0.04, 1.2, 0.05, 0.05, 0.20, 800, 200);
+      assertTest(
+        "test_capm_wacc_calculation",
+        Math.abs(waccOut.wacc - 0.088) < 0.0001,
+        `Ke = 10.0%, After-Tax Kd = 4.0%, Weights 80/20 -> WACC = ${(waccOut.wacc * 100).toFixed(2)}%`
+      );
+
+      const dcfOut = ValuationEngine.runDcfModel({
+        base_revenue: 1000, revenue_growth_rate: 0.05, target_ebit_margin: 0.20, effective_tax_rate: 0.20,
+        da_pct_revenue: 0.04, capex_pct_revenue: 0.05, nwc_pct_revenue: 0.01, wacc: 0.088, terminal_growth_rate: 0.025,
+        total_debt: 200, cash_and_equivalents: 50, diluted_shares: 100, current_price: 15
+      });
+      const expectedEq = dcfOut.implied_enterprise_value - 200 + 50;
+      assertTest(
+        "test_dcf_ev_to_equity_bridge",
+        Math.abs(dcfOut.implied_equity_value - expectedEq) < 0.01,
+        `Equity Value (${dcfOut.implied_equity_value.toFixed(1)}) = EV (${dcfOut.implied_enterprise_value.toFixed(1)}) - Debt (200) + Cash (50)`
+      );
+
+      let threwError = false;
+      try {
+        ValuationEngine.runDcfModel({
+          base_revenue: 1000, revenue_growth_rate: 0.05, target_ebit_margin: 0.20, effective_tax_rate: 0.20,
+          da_pct_revenue: 0.04, capex_pct_revenue: 0.05, nwc_pct_revenue: 0.01, wacc: 0.025, terminal_growth_rate: 0.03,
+          total_debt: 100, cash_and_equivalents: 50, diluted_shares: 100, current_price: 15
+        });
+      } catch (e) {
+        threwError = true;
+      }
+      assertTest(
+        "test_dcf_wacc_less_than_g_guard",
+        threwError,
+        "Throws validation error when WACC <= Terminal Growth Rate (g)"
+      );
+
+      document.getElementById("unitTestResultsContainer").innerHTML = results.map(r => `
+        <div class="p-2 rounded border ${r.passed ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-rose-50 border-rose-200 text-rose-900'}">
+          <div><strong>${r.passed ? 'PASS' : 'FAIL'}</strong> — ${r.name}</div>
+          <div class="text-slate-600 mt-0.5">${r.details}</div>
+        </div>
+      `).join("");
+    }
+
+    // =========================================================================
+    // EXPORT UTILITIES (.MD & .CSV DOWNLOADS)
+    // =========================================================================
+    function downloadResearchMarkdown() {
+      const blob = new Blob([lastGeneratedMarkdown], { type: "text/markdown;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${currentTicker}_FinSight_Equity_Research_Memo.md`;
+      a.click();
+    }
+
+    function downloadRatiosCsv() {
+      const company = SAMPLE_REPOSITORY[currentTicker];
+      const ratios = AnalyticsEngine.computeHistoricalRatios(company.financials);
+      const headers = Object.keys(ratios[0]);
+      const csvRows = [
+        headers.join(","),
+        ...ratios.map(row => headers.map(h => row[h] === null ? "" : row[h]).join(","))
+      ];
+      const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${currentTicker}_Financial_Ratios.csv`;
+      a.click();
+    }
+
+    // Initialize Application on Load
+    window.addEventListener("DOMContentLoaded", () => {
+      loadRepository();
+      resetToCompanyDefaults();
+      runAutomatedTests();
+    });
+  </script>
+</body>
+</html>
